@@ -261,9 +261,15 @@ const setCurrentHeaders = (headers) => updateActiveTab({ currentHeaders: headers
       return;
     }
 
+    console.log(`📋 Modo: ${selectedDocente ? 'Docente específico' : 'TODOS los docentes'}`);
+    console.log(`📋 Docentes a procesar (${docentesToProcess.length}):`, docentesToProcess);
+
     let updatedCount = 0;
     let createdCount = 0;
     const newData = [...data];
+
+    // IMPORTANTE: Variable global para todas las sesiones usadas (no por docente)
+    const sesionesUsadasGlobal = new Set();
 
     // Función auxiliar para detectar si una fila está vacía
     const isRowEmpty = (row) => {
@@ -338,8 +344,13 @@ const setCurrentHeaders = (headers) => updateActiveTab({ currentHeaders: headers
 
     docentesToProcess.forEach(docenteActual => {
       console.log(`\n--- Procesando: ${docenteActual} ---`);
-
-      const sesionesUsadas = new Set();
+      
+      // Debug: Mostrar sesiones de Zoom disponibles para este docente
+      const sesionesZoomDocente = parsedZoomData.filter(zoomRow => {
+        const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
+        return matchDocente(docenteActual, zoomDocente);
+      });
+      console.log(`📊 Sesiones Zoom encontradas para ${docenteActual}:`, sesionesZoomDocente.length);
 
       // PASO 1: Autocompletar filas existentes (prioridad máxima)
       console.log("Buscando filas para autocompletar...");
@@ -365,7 +376,7 @@ const setCurrentHeaders = (headers) => updateActiveTab({ currentHeaders: headers
 
           const claveZoom = `${normalizeCursoName(cursoZoom)}|||${seccionZoom.toUpperCase()}|||${sesionZoom}`;
           
-          if (sesionesUsadas.has(claveZoom)) continue;
+          if (sesionesUsadasGlobal.has(claveZoom)) continue;
 
           // Verificar si esta fila coincide con los datos de Zoom
           const cursoMatch = row.CURSO && normalizeCursoName(row.CURSO) === normalizeCursoName(cursoZoom);
@@ -413,7 +424,7 @@ const setCurrentHeaders = (headers) => updateActiveTab({ currentHeaders: headers
             }
             
             newData[index] = updatedRow;
-            sesionesUsadas.add(claveZoom);
+            sesionesUsadasGlobal.add(claveZoom);
             updatedCount++;
             
             console.log(`✓ Fila ${index} AUTOCOMPLETADA: ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}`);
@@ -458,7 +469,7 @@ const setCurrentHeaders = (headers) => updateActiveTab({ currentHeaders: headers
 
           const claveZoom = `${normalizeCursoName(cursoZoom)}|||${seccionZoom.toUpperCase()}|||${sesionZoom}`;
           
-          if (sesionesUsadas.has(claveZoom)) continue;
+          if (sesionesUsadasGlobal.has(claveZoom)) continue;
 
           // Autocompletar esta fila vacía con los datos de Zoom
           const fechaInicio = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
@@ -477,7 +488,7 @@ const setCurrentHeaders = (headers) => updateActiveTab({ currentHeaders: headers
           newData[index].SECCION = seccionZoom;
           newData[index].SESION = sesionZoom;
           
-          sesionesUsadas.add(claveZoom);
+          sesionesUsadasGlobal.add(claveZoom);
           updatedCount++;
           
           console.log(`✓ Fila vacía ${index} COMPLETADA con: ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}`);
@@ -504,7 +515,7 @@ const setCurrentHeaders = (headers) => updateActiveTab({ currentHeaders: headers
 
         const claveZoom = `${normalizeCursoName(cursoZoom)}|||${seccionZoom.toUpperCase()}|||${sesionZoom}`;
 
-        if (sesionesUsadas.has(claveZoom)) return;
+        if (sesionesUsadasGlobal.has(claveZoom)) return;
 
         // VERIFICAR SI YA EXISTE UNA FILA CON ESTA COMBINACIÓN (incluso si tiene datos)
         const existingRow = newData.find(row => 
@@ -516,7 +527,7 @@ const setCurrentHeaders = (headers) => updateActiveTab({ currentHeaders: headers
 
         if (existingRow) {
           console.log(`⚠️ Ya existe fila para ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}. NO se crea duplicado.`);
-          sesionesUsadas.add(claveZoom);
+          sesionesUsadasGlobal.add(claveZoom);
           return;
         }
 
@@ -568,7 +579,7 @@ const setCurrentHeaders = (headers) => updateActiveTab({ currentHeaders: headers
         }
 
         newData.push(newRow);
-        sesionesUsadas.add(claveZoom);
+        sesionesUsadasGlobal.add(claveZoom);
         createdCount++;
         
         console.log(`✓ Nueva fila realmente necesaria: ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}`);
