@@ -11,8 +11,6 @@ function DataTable({
   const extractCourseInfo = (value) => {
     if (!value || typeof value !== 'string') return { course: '', section: '' };
     
-    // Extract course name and section from patterns like:
-    // "WORD 365–PEAD-a SESION 01" or "WORD 365–PEAD-aa SESION 01"
     const courseMatch = value.match(/^(.+?)–\s*(PEAD-[a-zA-Z]+)/i);
     if (courseMatch) {
       return {
@@ -21,7 +19,6 @@ function DataTable({
       };
     }
     
-    // Try alternative pattern without dash
     const altMatch = value.match(/^(.+?)\s+(PEAD-[a-zA-Z]+)/i);
     if (altMatch) {
       return {
@@ -33,34 +30,75 @@ function DataTable({
     return { course: value, section: '' };
   };
 
-  // Helper function to suggest course based on pattern
   const suggestCourse = (value, rowData) => {
     if (!value || typeof value !== 'string') return '';
     return extractCourseInfo(value).course;
   };
 
-  // Helper function to suggest section based on pattern
   const suggestSection = (value, rowData) => {
     if (!value || typeof value !== 'string') return '';
     return extractCourseInfo(value).section;
   };
 
-  // Helper function to ensure we always return a string value
+  // FUNCIÓN MEJORADA para manejar correctamente los objetos
   const ensureString = (value) => {
     if (value === null || value === undefined) return '';
-    if (typeof value === 'object') {
-      // If it's an object, try to get a meaningful string representation
-      if (value instanceof Date) return value.toLocaleString();
-      if (Array.isArray(value)) return value.join(', ');
-      return String(value?.toString?.() || '');
+    
+    // Si ya es string, devolverlo directamente
+    if (typeof value === 'string') return value;
+    
+    // Si es número o booleano
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    
+    // Si es una fecha
+    if (value instanceof Date) {
+      return value.toLocaleDateString('es-ES', {
+        day: '2-digit',
+        month: '2-digit', 
+        year: 'numeric'
+      });
     }
+    
+    // Si es un array
+    if (Array.isArray(value)) {
+      return value.map(v => ensureString(v)).join(', ');
+    }
+    
+    // Si es un objeto
+    if (typeof value === 'object') {
+      // Intentar obtener propiedades comunes
+      if (value.text !== undefined) return String(value.text);
+      if (value.value !== undefined) return String(value.value);
+      if (value.name !== undefined) return String(value.name);
+      if (value.richText !== undefined && Array.isArray(value.richText)) {
+        return value.richText.map(rt => rt.text || '').join('');
+      }
+      
+      // Si tiene un método toString personalizado
+      if (value.toString && value.toString !== Object.prototype.toString) {
+        const strValue = value.toString();
+        if (strValue !== '[object Object]') return strValue;
+      }
+      
+      // Último recurso: intentar JSON
+      try {
+        const jsonStr = JSON.stringify(value);
+        if (jsonStr && jsonStr !== '{}' && jsonStr !== '[]') {
+          return jsonStr.length > 50 ? jsonStr.substring(0, 50) + '...' : jsonStr;
+        }
+      } catch (e) {
+        // Si falla JSON, devolver vacío
+      }
+      
+      return '';
+    }
+    
+    // Conversión final por defecto
     return String(value);
   };
 
-  // Use headers directly from the uploaded file
   const displayHeaders = headers;
 
-  // Si no hay headers, no mostrar nada
   if (!displayHeaders || displayHeaders.length === 0) {
     return (
       <div className="bg-white rounded-xl shadow-2xl overflow-hidden p-8 text-center">
@@ -146,7 +184,6 @@ function DataTable({
                           if (header === 'CURSO' || header === 'TEMA') {
                             const courseInfo = extractCourseInfo(newValue);
                             onCellChange(rowIndex, header, ensureString(courseInfo.course));
-                            // Also update the SECCION field if it exists
                             if (courseInfo.section && headers.includes('SECCION')) {
                               onCellChange(rowIndex, 'SECCION', ensureString(courseInfo.section));
                             }

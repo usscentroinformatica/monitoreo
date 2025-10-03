@@ -4,15 +4,80 @@ import ControlPanel from "./components/ControlPanel";
 import DataTable from "./components/DataTable";
 
 function App() {
-  const [data, setData] = useState([]);
-  const [zoomData, setZoomData] = useState([]);
-  const [selectedDocente, setSelectedDocente] = useState("");
-  const [numFilas, setNumFilas] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [availableSheets, setAvailableSheets] = useState([]);
-  const [selectedSheet, setSelectedSheet] = useState(0);
-  const [workbookData, setWorkbookData] = useState(null);
-  const [currentHeaders, setCurrentHeaders] = useState([]);
+  // Sistema de pestañas
+const [tabs, setTabs] = useState([]);
+const [activeTabId, setActiveTabId] = useState(null);
+const [nextTabId, setNextTabId] = useState(1);
+
+// Obtener la pestaña activa
+const activeTab = tabs.find(tab => tab.id === activeTabId);
+
+// Estados de la pestaña activa (si existe)
+const data = activeTab?.data || [];
+const zoomData = activeTab?.zoomData || [];
+const selectedDocente = activeTab?.selectedDocente || "";
+const numFilas = activeTab?.numFilas || "";
+const isLoading = activeTab?.isLoading || false;
+const availableSheets = activeTab?.availableSheets || [];
+const selectedSheet = activeTab?.selectedSheet || 0;
+const workbookData = activeTab?.workbookData || null;
+const currentHeaders = activeTab?.currentHeaders || [];
+
+// Función para actualizar la pestaña activa
+const updateActiveTab = (updates) => {
+  setTabs(prevTabs => 
+    prevTabs.map(tab => 
+      tab.id === activeTabId 
+        ? { ...tab, ...updates }
+        : tab
+    )
+  );
+};
+
+// Función para crear nueva pestaña
+const createNewTab = (fileName, initialData = {}) => {
+  const newTab = {
+    id: nextTabId,
+    name: fileName || `Archivo ${nextTabId}`,
+    data: initialData.data || [],
+    zoomData: [],
+    selectedDocente: "",
+    numFilas: "",
+    isLoading: false,
+    availableSheets: initialData.availableSheets || [],
+    selectedSheet: 0,
+    workbookData: initialData.workbookData || null,
+    currentHeaders: initialData.currentHeaders || []
+  };
+  
+  setTabs(prev => [...prev, newTab]);
+  setActiveTabId(nextTabId);
+  setNextTabId(prev => prev + 1);
+};
+
+// Función para cerrar pestaña
+const closeTab = (tabId) => {
+  const confirmClose = window.confirm("¿Estás seguro de cerrar esta pestaña? Los cambios no guardados se perderán.");
+  if (!confirmClose) return;
+
+  const newTabs = tabs.filter(tab => tab.id !== tabId);
+  setTabs(newTabs);
+  
+  if (activeTabId === tabId) {
+    setActiveTabId(newTabs.length > 0 ? newTabs[0].id : null);
+  }
+};
+
+// Wrappers para los setters
+const setData = (newData) => updateActiveTab({ data: newData });
+const setZoomData = (newZoomData) => updateActiveTab({ zoomData: newZoomData });
+const setSelectedDocente = (docente) => updateActiveTab({ selectedDocente: docente });
+const setNumFilas = (num) => updateActiveTab({ numFilas: num });
+const setIsLoading = (loading) => updateActiveTab({ isLoading: loading });
+const setAvailableSheets = (sheets) => updateActiveTab({ availableSheets: sheets });
+const setSelectedSheet = (sheet) => updateActiveTab({ selectedSheet: sheet });
+const setWorkbookData = (wb) => updateActiveTab({ workbookData: wb });
+const setCurrentHeaders = (headers) => updateActiveTab({ currentHeaders: headers });
 
   // ===== FUNCIONES DE UTILIDAD =====
   const normalizeDocenteName = (name) => {
@@ -167,9 +232,6 @@ function App() {
     
     const headers = lines[0].split(delimiter).map(h => h.trim().replace(/^"|"$/g, ''));
     
-    console.log("Delimitador detectado:", delimiter);
-    console.log("Headers detectados:", headers);
-    
     const parsedZoomData = [];
     for (let i = 1; i < lines.length; i++) {
       if (!lines[i].trim()) continue;
@@ -182,10 +244,14 @@ function App() {
       parsedZoomData.push(row);
     }
 
-    console.log("Total de registros Zoom:", parsedZoomData.length);
+    console.log("=== INICIANDO PROCESAMIENTO CSV ZOOM ===");
+    console.log("Total registros Zoom:", parsedZoomData.length);
+    
+    // IMPORTANTE: Mostrar los headers del Excel actual
+    console.log("Headers del Excel actual:", currentHeaders);
+    
     setZoomData(parsedZoomData);
 
-    // Determinar docentes a procesar
     const docentesToProcess = selectedDocente 
       ? [selectedDocente] 
       : [...new Set(data.map(row => row.DOCENTE).filter(d => d && d.trim() !== ''))];
@@ -195,228 +261,326 @@ function App() {
       return;
     }
 
-    console.log(`Procesando ${docentesToProcess.length} docente(s):`, docentesToProcess);
-
     let updatedCount = 0;
     let createdCount = 0;
-    let deletedCount = 0;
-    let newData = [...data];
+    const newData = [...data];
 
-    // Procesar cada docente
-    docentesToProcess.forEach(docenteActual => {
-      console.log(`\n--- Procesando docente: ${docenteActual} ---`);
-
-      // PASO 1: Identificar todas las sesiones del docente en Zoom
-      const sesionesZoomPorCurso = new Map(); // Key: CURSO|||SECCION, Value: Set de números de sesión
-
-      parsedZoomData.forEach(zoomRow => {
-        const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
-        const zoomTema = zoomRow['Tema'] || zoomRow['Topic'] || "";
-
-        if (!matchDocente(docenteActual, zoomDocente) || !zoomTema) return;
-
-        let temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
-        
-        if (temaMatch) {
-          const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatch;
-          const cursoZoom = cursoParte.trim();
-          const sesionNumero = sesionNumeroStr || "";
-          const key = `${normalizeCursoName(cursoZoom)}|||${seccionZoom.toUpperCase()}`;
-          
-          if (!sesionesZoomPorCurso.has(key)) {
-            sesionesZoomPorCurso.set(key, new Set());
-          }
-          if (sesionNumero) {
-            sesionesZoomPorCurso.get(key).add(parseInt(sesionNumero));
-          }
-        }
-      });
-
-      console.log(`Sesiones encontradas en Zoom para ${docenteActual}:`, 
-        Array.from(sesionesZoomPorCurso.entries()).map(([key, sessions]) => 
-          `${key}: [${Array.from(sessions).sort((a,b) => a-b).join(', ')}]`
-        )
-      );
-
-      // PASO 2: Eliminar filas del Excel que NO están en Zoom
-      const filasOriginales = newData.length;
-      newData = newData.filter(row => {
-        if (row.DOCENTE !== docenteActual) return true; // Mantener otras filas
-
-        // Si la fila tiene datos de Zoom completos, mantenerla
-        if (row["Columna 13"] && row.inicio && row.fin) return true;
-
-        // Si la fila está vacía o incompleta, verificar si existe en Zoom
-        const keyCurso = `${normalizeCursoName(row.CURSO || '')}|||${(row.SECCION || '').toUpperCase()}`;
-        const sesionesZoom = sesionesZoomPorCurso.get(keyCurso);
-        
-        // Si no hay curso/sección o no existe en Zoom, eliminar
-        if (!row.CURSO || !row.SECCION || !sesionesZoom) {
-          console.log(`Eliminando fila vacía sin coincidencia: ${row.CURSO} - ${row.SECCION} - Sesión ${row.SESION}`);
-          deletedCount++;
-          return false;
-        }
-
-        // Si la sesión no existe en Zoom, eliminar
-        if (row.SESION && !sesionesZoom.has(parseInt(row.SESION))) {
-          console.log(`Eliminando fila: Sesión ${row.SESION} no existe en Zoom para ${row.CURSO} - ${row.SECCION}`);
-          deletedCount++;
-          return false;
-        }
-
-        return true; // Mantener la fila para intentar autocompletar
-      });
-
-      // Buscar template del docente
-      let templateRow = newData.find(row => row.DOCENTE === docenteActual);
+    // Función auxiliar para detectar si una fila está vacía
+    const isRowEmpty = (row) => {
+      // Buscar en todas las posibles columnas de fecha/hora
+      const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
+      const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
+      const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
       
-      if (!templateRow) {
-        const firstZoomForDocente = parsedZoomData.find(zoomRow => {
-          const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
-          return matchDocente(docenteActual, zoomDocente);
-        });
-
-        if (firstZoomForDocente) {
-          templateRow = {
-            PERIODO: "",
-            MODELO: "PROTECH XP",
-            MODALIDAD: "VIRTUAL",
-            CURSO: "",
-            SECCION: "",
-            "AULA USS": "",
-            DOCENTE: docenteActual,
-            TURNO: "",
-            DIAS: "",
-            "HORA INICIO": "",
-            "HORA FIN": "",
-            SESION: "",
-            "Columna 13": "",
-            inicio: "",
-            fin: "",
-            "Columna 16": "",
-            "Columna 17": "",
-            TOTAL: ""
-          };
-        } else {
-          console.log(`No se encontraron registros de Zoom para ${docenteActual}`);
-          return;
+      let hasDate = false;
+      let hasStart = false;
+      
+      // Verificar fecha
+      for (const col of possibleDateCols) {
+        const value = row[col];
+        if (value && value.toString().trim() !== '') {
+          hasDate = true;
+          break;
         }
       }
+      
+      // Verificar hora inicio
+      for (const col of possibleStartCols) {
+        const value = row[col];
+        if (value && value.toString().trim() !== '') {
+          hasStart = true;
+          break;
+        }
+      }
+      
+      // Una fila está vacía si NO tiene fecha O NO tiene hora inicio
+      return !hasDate || !hasStart;
+    };
 
-      // PASO 3: Autocompletar filas existentes vacías
-      parsedZoomData.forEach(zoomRow => {
+    // Función para actualizar una fila con datos de Zoom
+    const updateRowWithZoom = (row, zoomInfo) => {
+      const updatedRow = { ...row };
+      
+      // Buscar columnas y actualizar
+      const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
+      const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
+      const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
+      
+      // Actualizar fecha
+      for (const col of possibleDateCols) {
+        if (currentHeaders.includes(col)) {
+          updatedRow[col] = zoomInfo.fecha;
+          break;
+        }
+      }
+      
+      // Actualizar inicio
+      for (const col of possibleStartCols) {
+        if (currentHeaders.includes(col)) {
+          updatedRow[col] = zoomInfo.horaInicio;
+          break;
+        }
+      }
+      
+      // Actualizar fin
+      for (const col of possibleEndCols) {
+        if (currentHeaders.includes(col)) {
+          updatedRow[col] = zoomInfo.horaFin;
+          break;
+        }
+      }
+      
+      updatedRow.CURSO = zoomInfo.curso;
+      updatedRow.TURNO = zoomInfo.turno;
+      
+      return updatedRow;
+    };
+
+    docentesToProcess.forEach(docenteActual => {
+      console.log(`\n--- Procesando: ${docenteActual} ---`);
+
+      const sesionesUsadas = new Set();
+
+      // PASO 1: Autocompletar filas existentes (prioridad máxima)
+      console.log("Buscando filas para autocompletar...");
+      
+      // Primera pasada: Autocompletar filas que coinciden exactamente
+      newData.forEach((row, index) => {
+        if (row.DOCENTE !== docenteActual) return;
+
+        // Buscar coincidencia en Zoom para esta fila específica
+        for (const zoomRow of parsedZoomData) {
+          const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
+          const zoomTema = zoomRow['Tema'] || zoomRow['Topic'] || "";
+          
+          if (!matchDocente(docenteActual, zoomDocente) || !zoomTema) continue;
+
+          const temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
+          
+          if (!temaMatch) continue;
+
+          const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatch;
+          const cursoZoom = cursoParte.trim();
+          const sesionZoom = sesionNumeroStr ? parseInt(sesionNumeroStr) : 0;
+
+          const claveZoom = `${normalizeCursoName(cursoZoom)}|||${seccionZoom.toUpperCase()}|||${sesionZoom}`;
+          
+          if (sesionesUsadas.has(claveZoom)) continue;
+
+          // Verificar si esta fila coincide con los datos de Zoom
+          const cursoMatch = row.CURSO && normalizeCursoName(row.CURSO) === normalizeCursoName(cursoZoom);
+          const seccionMatch = row.SECCION && row.SECCION.toUpperCase() === seccionZoom.toUpperCase();
+          const sesionMatch = row.SESION && parseInt(String(row.SESION)) === sesionZoom;
+
+          // Si coincide exactamente, autocompletar (sin importar si tiene o no fechas/horas)
+          if (cursoMatch && seccionMatch && sesionMatch) {
+            const fechaInicio = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
+            const fechaFin = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
+            
+            // Autocompletar solo los campos de fecha/hora que estén vacíos
+            const updatedRow = { ...row };
+            
+            // Buscar y actualizar fecha solo si está vacía
+            const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
+            for (const col of possibleDateCols) {
+              if (currentHeaders.includes(col) && (!updatedRow[col] || updatedRow[col].toString().trim() === '')) {
+                updatedRow[col] = extractDate(fechaInicio);
+                break;
+              }
+            }
+            
+            // Actualizar hora inicio solo si está vacía
+            const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
+            for (const col of possibleStartCols) {
+              if (currentHeaders.includes(col) && (!updatedRow[col] || updatedRow[col].toString().trim() === '')) {
+                updatedRow[col] = extractTime(fechaInicio);
+                break;
+              }
+            }
+            
+            // Actualizar hora fin solo si está vacía
+            const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
+            for (const col of possibleEndCols) {
+              if (currentHeaders.includes(col) && (!updatedRow[col] || updatedRow[col].toString().trim() === '')) {
+                updatedRow[col] = extractTime(fechaFin);
+                break;
+              }
+            }
+            
+            // Actualizar turno solo si está vacío
+            if (!updatedRow.TURNO || updatedRow.TURNO.toString().trim() === '') {
+              updatedRow.TURNO = detectTurno(fechaInicio);
+            }
+            
+            newData[index] = updatedRow;
+            sesionesUsadas.add(claveZoom);
+            updatedCount++;
+            
+            console.log(`✓ Fila ${index} AUTOCOMPLETADA: ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}`);
+            break;
+          }
+        }
+      });
+
+      // Segunda pasada: Autocompletar filas completamente vacías del docente
+      console.log("Buscando filas vacías para autocompletar...");
+      
+      newData.forEach((row, index) => {
+        if (row.DOCENTE !== docenteActual) return;
+
+        // Verificar si esta fila está realmente vacía (sin curso, sección, sesión definidos)
+        const hasEmptySession = !row.CURSO || row.CURSO.toString().trim() === '' ||
+                               !row.SECCION || row.SECCION.toString().trim() === '' ||
+                               !row.SESION || row.SESION.toString().trim() === '';
+
+        if (!hasEmptySession) return;
+
+        console.log(`Fila ${index} tiene datos incompletos:`, {
+          CURSO: row.CURSO,
+          SECCION: row.SECCION,
+          SESION: row.SESION
+        });
+
+        // Buscar cualquier sesión de Zoom no usada para este docente
+        for (const zoomRow of parsedZoomData) {
+          const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
+          const zoomTema = zoomRow['Tema'] || zoomRow['Topic'] || "";
+          
+          if (!matchDocente(docenteActual, zoomDocente) || !zoomTema) continue;
+
+          const temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
+          
+          if (!temaMatch) continue;
+
+          const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatch;
+          const cursoZoom = cursoParte.trim();
+          const sesionZoom = sesionNumeroStr ? parseInt(sesionNumeroStr) : 0;
+
+          const claveZoom = `${normalizeCursoName(cursoZoom)}|||${seccionZoom.toUpperCase()}|||${sesionZoom}`;
+          
+          if (sesionesUsadas.has(claveZoom)) continue;
+
+          // Autocompletar esta fila vacía con los datos de Zoom
+          const fechaInicio = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
+          const fechaFin = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
+          
+          newData[index] = updateRowWithZoom(row, {
+            curso: cursoZoom,
+            fecha: extractDate(fechaInicio),
+            horaInicio: extractTime(fechaInicio),
+            horaFin: extractTime(fechaFin),
+            turno: detectTurno(fechaInicio)
+          });
+          
+          // Actualizar también los campos básicos
+          newData[index].CURSO = cursoZoom;
+          newData[index].SECCION = seccionZoom;
+          newData[index].SESION = sesionZoom;
+          
+          sesionesUsadas.add(claveZoom);
+          updatedCount++;
+          
+          console.log(`✓ Fila vacía ${index} COMPLETADA con: ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}`);
+          break;
+        }
+      });
+
+      // PASO 2: Crear solo lo que realmente falta
+      console.log("\nVerificando si hay sesiones realmente faltantes...");
+      
+      parsedZoomData.forEach((zoomRow) => {
         const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
         const zoomTema = zoomRow['Tema'] || zoomRow['Topic'] || "";
-        const fechaInicio = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
-        const fechaFin = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
-
+        
         if (!matchDocente(docenteActual, zoomDocente) || !zoomTema) return;
 
-        let temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
+        const temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
         
         if (!temaMatch) return;
 
         const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatch;
         const cursoZoom = cursoParte.trim();
-        const sesionNumero = parseInt(sesionNumeroStr || "0");
+        const sesionZoom = sesionNumeroStr ? parseInt(sesionNumeroStr) : 0;
 
-        let matched = false;
+        const claveZoom = `${normalizeCursoName(cursoZoom)}|||${seccionZoom.toUpperCase()}|||${sesionZoom}`;
 
-        // Buscar fila existente para autocompletar
-        newData.forEach((row, index) => {
-          if (row.DOCENTE !== docenteActual) return;
-          if (matched) return; // Ya se encontró match para este registro de Zoom
+        if (sesionesUsadas.has(claveZoom)) return;
 
-          const isEmptyRow = !row["Columna 13"] || !row.inicio || !row.fin;
-          if (!isEmptyRow) return; // Solo autocompletar filas vacías
+        // VERIFICAR SI YA EXISTE UNA FILA CON ESTA COMBINACIÓN (incluso si tiene datos)
+        const existingRow = newData.find(row => 
+          row.DOCENTE === docenteActual &&
+          normalizeCursoName(row.CURSO || "") === normalizeCursoName(cursoZoom) &&
+          (row.SECCION || "").toUpperCase() === seccionZoom.toUpperCase() &&
+          parseInt(String(row.SESION || 0)) === sesionZoom
+        );
 
-          const cursoExcelNorm = normalizeCursoName(row.CURSO || '');
-          const cursoZoomNorm = normalizeCursoName(cursoZoom);
-          const seccionMatch = (row.SECCION || '').toUpperCase() === seccionZoom.toUpperCase();
-          const sesionMatch = sesionNumero && parseInt(String(row.SESION)) === sesionNumero;
+        if (existingRow) {
+          console.log(`⚠️ Ya existe fila para ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}. NO se crea duplicado.`);
+          sesionesUsadas.add(claveZoom);
+          return;
+        }
 
-          let cursoMatch = cursoExcelNorm === cursoZoomNorm;
-          if (!cursoMatch && cursoExcelNorm && cursoZoomNorm) {
-            const wordsExcel = cursoExcelNorm.split(" ");
-            const wordsZoom = cursoZoomNorm.split(" ");
-            const commonWords = wordsExcel.filter(word => wordsZoom.includes(word));
-            cursoMatch = commonWords.length >= 2;
-          }
+        // Solo crear nueva fila si realmente no existe
+        let templateRow = newData.find(row => row.DOCENTE === docenteActual) || {};
 
-          if (seccionMatch && sesionMatch && cursoMatch) {
-            const fechaExtraida = extractDate(fechaInicio);
-            const horaInicioExtraida = extractTime(fechaInicio);
-            const horaFinExtraida = extractTime(fechaFin);
-            const turnoDetectado = detectTurno(fechaInicio);
-            
-            newData[index] = {
-              ...newData[index],
-              CURSO: cursoZoom,
-              TURNO: turnoDetectado,
-              "Columna 13": fechaExtraida,
-              inicio: horaInicioExtraida,
-              fin: horaFinExtraida
-            };
-            updatedCount++;
-            matched = true;
-            console.log(`Autocompletada: ${cursoZoom} - ${seccionZoom} - Sesión ${sesionNumero}`);
-          }
+        const fechaInicio = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
+        const fechaFin = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
+
+        // Crear objeto con TODAS las columnas del Excel actual
+        const newRow = {};
+        currentHeaders.forEach(header => {
+          newRow[header] = templateRow[header] || "";
         });
 
-        // PASO 4: Si no hay fila existente, crear una nueva
-        if (!matched) {
-          const fechaExtraida = extractDate(fechaInicio);
-          const horaInicioExtraida = extractTime(fechaInicio);
-          const horaFinExtraida = extractTime(fechaFin);
-          const turnoDetectado = detectTurno(fechaInicio);
+        // Actualizar con datos específicos
+        newRow.DOCENTE = docenteActual;
+        newRow.CURSO = cursoZoom;
+        newRow.SECCION = seccionZoom;
+        newRow.SESION = sesionZoom;
+        newRow.TURNO = detectTurno(fechaInicio);
+        newRow.MODELO = templateRow.MODELO || "PROTECH XP";
+        newRow.MODALIDAD = templateRow.MODALIDAD || "VIRTUAL";
 
-          const newRow = {
-            PERIODO: templateRow.PERIODO,
-            MODELO: templateRow.MODELO,
-            MODALIDAD: templateRow.MODALIDAD,
-            CURSO: cursoZoom,
-            SECCION: seccionZoom,
-            "AULA USS": templateRow["AULA USS"],
-            DOCENTE: docenteActual,
-            TURNO: turnoDetectado,
-            DIAS: templateRow.DIAS,
-            "HORA INICIO": templateRow["HORA INICIO"],
-            "HORA FIN": templateRow["HORA FIN"],
-            SESION: sesionNumero,
-            "Columna 13": fechaExtraida,
-            inicio: horaInicioExtraida,
-            fin: horaFinExtraida,
-            "Columna 16": "",
-            "Columna 17": "",
-            TOTAL: ""
-          };
-
-          const alreadyExists = newData.some(row => 
-            row.DOCENTE === docenteActual &&
-            row.SECCION.toUpperCase() === seccionZoom.toUpperCase() &&
-            parseInt(String(row.SESION)) === sesionNumero &&
-            row["Columna 13"] === fechaExtraida
-          );
-
-          if (!alreadyExists) {
-            newData.push(newRow);
-            createdCount++;
-            console.log(`Nueva fila: ${cursoZoom} - ${seccionZoom} - Sesión ${sesionNumero}`);
+        // Asignar fecha y horas según columnas disponibles
+        const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA'];
+        const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio'];
+        const possibleEndCols = ['fin', 'FIN', 'Hora Fin'];
+        
+        for (const col of possibleDateCols) {
+          if (currentHeaders.includes(col)) {
+            newRow[col] = extractDate(fechaInicio);
+            break;
           }
         }
+        
+        for (const col of possibleStartCols) {
+          if (currentHeaders.includes(col)) {
+            newRow[col] = extractTime(fechaInicio);
+            break;
+          }
+        }
+        
+        for (const col of possibleEndCols) {
+          if (currentHeaders.includes(col)) {
+            newRow[col] = extractTime(fechaFin);
+            break;
+          }
+        }
+
+        newData.push(newRow);
+        sesionesUsadas.add(claveZoom);
+        createdCount++;
+        
+        console.log(`✓ Nueva fila realmente necesaria: ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}`);
       });
     });
 
     setData(newData);
 
-    const mensaje = selectedDocente 
-      ? `Procesado para ${selectedDocente}:\n${deletedCount} filas eliminadas\n${updatedCount} filas autocompletadas\n${createdCount} filas nuevas creadas`
-      : `Procesados ${docentesToProcess.length} docentes:\n${deletedCount} filas eliminadas\n${updatedCount} filas autocompletadas\n${createdCount} filas nuevas creadas`;
-    
-    alert(mensaje);
+    alert(`✅ Completado:\n\n${updatedCount} filas autocompletadas\n${createdCount} filas nuevas creadas`);
 
   } catch (error) {
-    alert("Error al procesar el archivo CSV: " + error.message);
+    alert("❌ Error: " + error.message);
     console.error(error);
   } finally {
     setIsLoading(false);
@@ -428,30 +592,35 @@ function App() {
   const file = event.target.files[0];
   if (!file) return;
 
-  setIsLoading(true);
+  const tempLoading = { isLoading: true };
+  if (activeTab) updateActiveTab(tempLoading);
+
   try {
     const workbook = new ExcelJS.Workbook();
     const arrayBuffer = await file.arrayBuffer();
     await workbook.xlsx.load(arrayBuffer);
-    setWorkbookData(workbook);
     
     const sheetNames = workbook.worksheets.map((sheet, index) => ({
       index,
       name: sheet.name
     }));
-    setAvailableSheets(sheetNames);
     
     const worksheet = workbook.worksheets[0];
     const { data: loadedData, headers: sheetHeaders } = loadSheetData(worksheet);
     
-    setData(loadedData);
-    setCurrentHeaders(sheetHeaders);  // Guarda los headers dinámicos
+    // Crear nueva pestaña con el archivo
+    createNewTab(file.name, {
+      data: loadedData,
+      availableSheets: sheetNames,
+      workbookData: workbook,
+      currentHeaders: sheetHeaders
+    });
     
   } catch (error) {
-    alert("❌ Error al cargar el archivo: " + error.message);
+    alert("Error al cargar el archivo: " + error.message);
     console.error(error);
   } finally {
-    setIsLoading(false);
+    if (activeTab) updateActiveTab({ isLoading: false });
     event.target.value = "";
   }
 };
@@ -1122,38 +1291,93 @@ const createRowsForAllDocentes = () => {
 
   // ===== RENDER =====
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-4">
-      <div className="max-w-full mx-auto">
-        <ControlPanel
-          selectedDocente={selectedDocente}
-          setSelectedDocente={setSelectedDocente}
-          numFilas={numFilas}
-          setNumFilas={setNumFilas}
-          uniqueDocentes={uniqueDocentes}
-          onCreateRows={createRowsForDocente}
-          onCreateRowsForAll={createRowsForAllDocentes}
-          onAddRow={addRow}
-          onExport={exportToExcel}
-          onLoadExcel={handleFileUpload}
-          onLoadZoomCsv={handleZoomCsvUpload}
-          isLoading={isLoading}
-          displayDataLength={displayData.length}
-          displayData={displayData} // NUEVO: Pasa displayData para export local si se necesita
-          availableSheets={availableSheets}
-          selectedSheet={selectedSheet}
-          onSheetChange={handleSheetChange}
-        />
-
-        <DataTable
-  data={displayData}
-  headers={currentHeaders.length > 0 ? currentHeaders : []}  // Array vacío si no hay headers cargados
-  dropdownOptions={dropdownOptions}
-  onCellChange={handleCellChange}
-  onDeleteRow={deleteRow}
-/>
+  <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-4">
+    <div className="max-w-full mx-auto">
+      {/* SISTEMA DE PESTAÑAS */}
+      <div className="bg-white rounded-t-xl shadow-lg mb-0">
+        <div className="flex items-center bg-gray-100 border-b-2 border-gray-300 overflow-x-auto">
+          {tabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={`flex items-center px-4 py-3 cursor-pointer border-r border-gray-300 transition-all whitespace-nowrap ${
+                activeTabId === tab.id
+                  ? 'bg-white border-b-4 border-blue-600 font-bold'
+                  : 'bg-gray-200 hover:bg-gray-300'
+              }`}
+              onClick={() => setActiveTabId(tab.id)}
+            >
+              <span className="mr-2 text-sm">{tab.name}</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeTab(tab.id);
+                }}
+                className="text-red-500 hover:text-red-700 font-bold text-xl ml-2"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={() => document.getElementById('file-input-new-tab').click()}
+            className="px-6 py-3 bg-blue-600 text-white hover:bg-blue-700 font-bold whitespace-nowrap text-sm"
+          >
+            + Nueva Pestaña
+          </button>
+          <input
+            id="file-input-new-tab"
+            type="file"
+            accept=".xlsx, .xls"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+        </div>
       </div>
+
+      {/* CONTENIDO DE LA PESTAÑA ACTIVA */}
+      {activeTab ? (
+        <>
+          <ControlPanel
+            selectedDocente={selectedDocente}
+            setSelectedDocente={setSelectedDocente}
+            numFilas={numFilas}
+            setNumFilas={setNumFilas}
+            uniqueDocentes={uniqueDocentes}
+            onCreateRows={createRowsForDocente}
+            onCreateRowsForAll={createRowsForAllDocentes}
+            onAddRow={addRow}
+            onExport={exportToExcel}
+            onLoadExcel={handleFileUpload}
+            onLoadZoomCsv={handleZoomCsvUpload}
+            isLoading={isLoading}
+            displayDataLength={displayData.length}
+            displayData={displayData}
+            availableSheets={availableSheets}
+            selectedSheet={selectedSheet}
+            onSheetChange={handleSheetChange}
+          />
+
+          <DataTable
+            data={displayData}
+            headers={currentHeaders.length > 0 ? currentHeaders : []}
+            dropdownOptions={dropdownOptions}
+            onCellChange={handleCellChange}
+            onDeleteRow={deleteRow}
+          />
+        </>
+      ) : (
+        <div className="bg-white rounded-b-xl shadow-2xl p-12 text-center">
+          <h2 className="text-2xl font-bold text-gray-700 mb-4">
+            No hay archivos abiertos
+          </h2>
+          <p className="text-gray-500 mb-6">
+            Haz clic en "+ Nueva Pestaña" para cargar un archivo Excel
+          </p>
+        </div>
+      )}
     </div>
-  );
+  </div>
+);
 }
 
 export default App;
