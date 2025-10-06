@@ -3,6 +3,46 @@ import ExcelJS from "exceljs";
 import ControlPanel from "./components/ControlPanel";
 import DataTable from "./components/DataTable";
 
+// Rutas a los archivos de plantilla
+const TEMPLATE_EXCEL = "/src/archivos/EJEMPLO.xlsx";
+const TEMPLATE_CSV = "/src/archivos/meetings_Docentes_CIS_2025_09_08_2025_09_21.csv";
+
+// Función para descargar archivo Excel de plantilla
+const downloadExcelTemplate = async () => {
+  try {
+    const response = await fetch(TEMPLATE_EXCEL);
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'EJEMPLO.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  } catch (error) {
+    console.error('Error al descargar la plantilla Excel:', error);
+  }
+};
+
+// Función para descargar archivo CSV de plantilla
+const downloadCSVTemplate = async () => {
+  try {
+    const response = await fetch(TEMPLATE_CSV);
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'meetings_Docentes_CIS_template.csv';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  } catch (error) {
+    console.error('Error al descargar la plantilla CSV:', error);
+  }
+};
+
 function App() {
   // Sistema de pestañas
   const [tabs, setTabs] = useState([]);
@@ -1887,6 +1927,22 @@ const displayData = useMemo(() => {
         {/* CONTENIDO DE LA PESTAÑA ACTIVA */}
         {activeTab ? (
           <>
+            {/* Botones de descarga de plantillas */}
+            <div className="flex gap-4 mb-4 px-4">
+              <button
+                onClick={downloadExcelTemplate}
+                className="px-4 py-2 bg-green-600 text-white hover:bg-green-700 rounded-md font-semibold text-sm"
+              >
+                Descargar Plantilla Excel
+              </button>
+              <button
+                onClick={downloadCSVTemplate}
+                className="px-4 py-2 bg-green-600 text-white hover:bg-green-700 rounded-md font-semibold text-sm"
+              >
+                Descargar Plantilla CSV
+              </button>
+            </div>
+
             <ControlPanel
               selectedDocente={selectedDocente}
               setSelectedDocente={setSelectedDocente}
