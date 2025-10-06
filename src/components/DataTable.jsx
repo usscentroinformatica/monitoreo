@@ -7,7 +7,7 @@ function DataTable({
   onCellChange, 
   onDeleteRow 
 }) {
-  // Helper function to extract information from course title
+  // Helper function to extract information from course titleE
   const extractCourseInfo = (value) => {
     if (!value || typeof value !== 'string') return { course: '', section: '' };
     
