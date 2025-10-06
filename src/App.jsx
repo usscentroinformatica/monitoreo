@@ -613,6 +613,219 @@ function App() {
   }
 };
 
+  // ===== FUNCIÓN PRINCIPAL: AUTOCOMPLETAR CON ZOOM =====
+  const handleAutocompletarConZoom = async () => {
+  if (data.length === 0) {
+    alert("⚠️ Primero carga el archivo Excel TRADICIONAL");
+    return;
+  }
+
+  setIsLoading(true);
+  
+  try {
+    console.log("=== INICIANDO PROCESO COMPLETO ===");
+    
+    // PASO 1: Autocompletar filas existentes con datos de Zoom (si hay CSV cargado)
+    let dataProcesada = [...data];
+    
+    if (zoomData.length > 0) {
+      console.log("\n📋 PASO 1: Autocompletando filas existentes con datos de Zoom");
+      
+      dataProcesada.forEach((row, index) => {
+        const docente = row.DOCENTE;
+        const curso = row.CURSO;
+        const seccion = row.SECCION;
+        const sesion = row.SESION;
+
+        if (!docente || !curso || !seccion || !sesion) return;
+
+        const sesionZoom = zoomData.find(zoomRow => {
+          const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
+          const zoomTema = zoomRow['Tema'] || zoomRow['Topic'] || "";
+          
+          if (!matchDocente(docente, zoomDocente)) return false;
+          
+          const temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
+          if (!temaMatch) return false;
+          
+          const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatch;
+          const cursoZoom = cursoParte.trim();
+          const sesionZoom = sesionNumeroStr ? parseInt(sesionNumeroStr) : 0;
+          
+          return normalizeCursoName(cursoZoom) === normalizeCursoName(curso) &&
+                 seccionZoom.toUpperCase() === seccion.toUpperCase() &&
+                 sesionZoom === parseInt(sesion);
+        });
+
+        if (sesionZoom) {
+          const fechaInicio = sesionZoom['Hora de inicio'] || sesionZoom['Start Time'] || "";
+          const fechaFin = sesionZoom['Hora de finalización'] || sesionZoom['End Time'] || "";
+          
+          const fechaExtraida = extractDate(fechaInicio);
+          const horaInicioExtraida = extractTime(fechaInicio);
+          const horaFinExtraida = extractTime(fechaFin);
+          
+          // Autocompletar campos
+          const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
+          for (const col of possibleDateCols) {
+            if (currentHeaders.includes(col)) {
+              dataProcesada[index][col] = fechaExtraida;
+              break;
+            }
+          }
+          
+          const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
+          for (const col of possibleStartCols) {
+            if (currentHeaders.includes(col)) {
+              dataProcesada[index][col] = horaInicioExtraida;
+              break;
+            }
+          }
+          
+          const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
+          for (const col of possibleEndCols) {
+            if (currentHeaders.includes(col)) {
+              dataProcesada[index][col] = horaFinExtraida;
+              break;
+            }
+          }
+          
+          dataProcesada[index].TURNO = detectTurno(fechaInicio);
+          
+          if (currentHeaders.includes('INICIO SESION 10 MINUTOS ANTES')) {
+            dataProcesada[index]['INICIO SESION 10 MINUTOS ANTES'] = verificarInicio10MinutesAntes(
+              horaInicioExtraida,
+              row['HORA INICIO'] || ""
+            );
+          }
+          
+          const possibleFinalizaCols = ['FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)'];
+          for (const col of possibleFinalizaCols) {
+            if (currentHeaders.includes(col)) {
+              dataProcesada[index][col] = horaFinExtraida;
+              break;
+            }
+          }
+          
+          console.log(`  ✓ Autocompletado: ${docente} - ${curso} - Sesión ${sesion}`);
+        }
+      });
+    }
+    
+    // PASO 2: Detectar docentes/cursos únicos
+    console.log("\n📋 PASO 2: Detectando docentes y cursos");
+    
+    const docentesCursosMap = new Map();
+    
+    dataProcesada.forEach(row => {
+      const docente = row.DOCENTE;
+      const curso = row.CURSO;
+      const seccion = row.SECCION;
+      
+      if (!docente || !curso || !seccion) return;
+      
+      const key = `${docente}|||${curso}|||${seccion}`;
+      
+      if (!docentesCursosMap.has(key)) {
+        docentesCursosMap.set(key, {
+          docente,
+          curso,
+          seccion,
+          periodo: row.PERIODO || "",
+          sesionesExistentes: []
+        });
+      }
+      
+      // Guardar las sesiones que ya tienen datos autocompletados
+      if (row.SESION) {
+        docentesCursosMap.get(key).sesionesExistentes.push({
+          sesion: parseInt(row.SESION),
+          datos: row
+        });
+      }
+    });
+
+    console.log(`Total combinaciones encontradas: ${docentesCursosMap.size}`);
+    
+    // PASO 3: Crear 16 sesiones por cada curso
+    console.log("\n📋 PASO 3: Creando 16 sesiones por cada curso/docente");
+    
+    const nuevasFilas = [];
+    let totalCreadas = 0;
+    let totalConDatos = 0;
+
+    docentesCursosMap.forEach(({ docente, curso, seccion, periodo, sesionesExistentes }) => {
+      console.log(`\n--- ${docente} - ${curso} - ${seccion} ---`);
+      
+      // Crear un mapa de sesiones existentes para búsqueda rápida
+      const mapaSesiones = new Map();
+      sesionesExistentes.forEach(item => {
+        mapaSesiones.set(item.sesion, item.datos);
+      });
+      
+      // Crear 16 sesiones (del 1 al 16)
+      for (let sesion = 1; sesion <= 16; sesion++) {
+        const nuevaFila = {};
+        
+        // Inicializar todas las columnas como vacías
+        currentHeaders.forEach(header => {
+          nuevaFila[header] = "";
+        });
+        
+        // Establecer valores básicos
+        nuevaFila.SESION = sesion;
+        nuevaFila.DOCENTE = docente;
+        nuevaFila.PERIODO = periodo;
+        nuevaFila.CURSO = curso;
+        nuevaFila.SECCION = seccion;
+        
+        // Si esta sesión ya tiene datos autocompletados, copiarlos
+        // Si esta sesión ya tiene datos autocompletados, copiarlos
+if (mapaSesiones.has(sesion)) {
+  const datosExistentes = mapaSesiones.get(sesion);
+  
+  // Copiar solo los campos que fueron autocompletados desde Zoom
+  const camposAutocompletables = [
+    'Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia',
+    'inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO',
+    'fin', 'FIN', 'Hora Fin', 'HORA FIN',
+    'TURNO', // ⭐ Solo copiar si viene de Zoom
+    'INICIO SESION 10 MINUTOS ANTES',
+    'FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)'
+  ];
+  
+  camposAutocompletables.forEach(campo => {
+    if (currentHeaders.includes(campo) && datosExistentes[campo]) {
+      nuevaFila[campo] = datosExistentes[campo];
+    }
+  });
+  
+  totalConDatos++;
+  console.log(`  ✓ Sesión ${sesion}: CON DATOS`);
+} else {
+  console.log(`  ○ Sesión ${sesion}: VACÍA`);
+}
+        
+        nuevasFilas.push(nuevaFila);
+        totalCreadas++;
+      }
+    });
+
+    // PASO 4: Reemplazar datos con las nuevas 16 sesiones
+    setData(nuevasFilas);
+    
+    alert(`✅ Proceso completado:\n\n${totalCreadas} sesiones creadas (16 por curso)\n${totalConDatos} sesiones con datos de Zoom\n${totalCreadas - totalConDatos} sesiones vacías`);
+    
+    console.log("=== PROCESO FINALIZADO ===");
+    
+  } catch (error) {
+    console.error("Error en proceso:", error);
+    alert("❌ Error: " + error.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
   const handleFileUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -800,262 +1013,210 @@ function App() {
     console.log('✅ Headers reales detectados correctamente');
   }
 
-  
-const getCellValue = (cell, columnIndex) => {
-  if (!cell || cell.value === null || cell.value === undefined) return "";
-  
-  const rawValue = cell.value;
-  const headerName = sheetHeaders[columnIndex - 1];
-  
-  // ⭐ PRIORIDAD MÁXIMA: Números que deben permanecer como números
-  if (headerName && ['SESION', 'TIEMPO DE ESPERA ANTES DE INICIAR LA CLASE', 'HORAS PROGRAMADAS'].includes(headerName.toUpperCase())) {
-    if (typeof rawValue === 'number') {
-      // Si es 0, devolverlo como "0"
-      if (rawValue === 0) {
-        return "0";
+  console.log(`\n🗂️ LEYENDO DATOS desde fila ${headerRowIndex + 1}...`);
+  const maxRowsToCheck = Math.min(worksheet.rowCount || 1000, 1000);
+
+  // ⭐ FUNCIÓN getCellValue - CORREGIDA
+  const getCellValue = (cell, columnIndex) => {
+    if (!cell || cell.value === null || cell.value === undefined) return "";
+
+    const rawValue = cell.value;
+    const headerName = sheetHeaders[columnIndex - 1];
+
+    // Números específicos
+    if (headerName && ['SESION', 'TIEMPO DE ESPERA ANTES DE INICIAR LA CLASE', 'HORAS PROGRAMADAS'].includes(headerName.toUpperCase())) {
+      if (typeof rawValue === 'number') {
+        if (rawValue === 0) return "0";
+        return Math.round(rawValue);
       }
-      return Math.round(rawValue);
-    }
-    if (typeof rawValue === 'string') {
-      const num = parseInt(rawValue);
-      if (!isNaN(num)) {
-        // Si es 0, devolverlo como "0"
-        if (num === 0) {
-          return "0";
+      if (typeof rawValue === 'string') {
+        const num = parseInt(rawValue);
+        if (!isNaN(num)) {
+          if (num === 0) return "0";
+          return num;
         }
-        return num;
+      }
+      if (typeof rawValue === 'object') {
+        if (rawValue.result !== undefined) return String(rawValue.result);
+        if (rawValue.value !== undefined) return String(rawValue.value);
+        return "";
       }
     }
-  }
-  
-  // ⭐ EFICIENCIA - Preservar el valor original de Excel
-  if (headerName && headerName.toUpperCase() === 'EFICIENCIA') {
-    // Si es un objeto de Excel con resultado de fórmula
-    if (typeof rawValue === 'object') {
-      if (rawValue.result !== undefined) {
-        const result = rawValue.result;
-        // Si el resultado es un número, formatearlo como porcentaje
-        if (typeof result === 'number') {
-          return `${Math.round(result * 100)}%`;
+
+    // EFICIENCIA
+    if (headerName && headerName.toUpperCase() === 'EFICIENCIA') {
+      if (typeof rawValue === 'object') {
+        if (rawValue.result !== undefined) {
+          const result = rawValue.result;
+          if (typeof result === 'number') {
+            return `${Math.round(result * 100)}%`;
+          }
+          return String(result);
         }
-        return result;
-      }
-      if (rawValue.formula) return rawValue.formula;
-      if (rawValue.value !== undefined) {
-        const value = rawValue.value;
-        if (typeof value === 'number') {
-          return `${Math.round(value * 100)}%`;
+        if (rawValue.formula) return rawValue.formula;
+        if (rawValue.value !== undefined) {
+          const value = rawValue.value;
+          if (typeof value === 'number') {
+            return `${Math.round(value * 100)}%`;
+          }
+          return String(value);
         }
-        return value;
+        return "";
       }
-    }
-    
-    // Si es un número directo
-    if (typeof rawValue === 'number') {
-      // Si es un decimal (por ejemplo 0.85), convertirlo a porcentaje
-      if (rawValue > 0 && rawValue <= 1) {
-        return `${Math.round(rawValue * 100)}%`;
-      }
-      // Si es un número mayor a 1, asumimos que ya es porcentaje
-      return `${Math.round(rawValue)}%`;
-    }
-    
-    // Si es un string con porcentaje, mantenerlo
-    if (typeof rawValue === 'string') {
-      if (rawValue.includes('%')) return rawValue;
-      // Intentar convertir a número si es posible
-      const num = parseFloat(rawValue);
-      if (!isNaN(num)) {
-        if (num > 0 && num <= 1) {
-          return `${Math.round(num * 100)}%`;
+
+      if (typeof rawValue === 'number') {
+        if (rawValue > 0 && rawValue <= 1) {
+          return `${Math.round(rawValue * 100)}%`;
         }
-        return `${Math.round(num)}%`;
+        return `${Math.round(rawValue)}%`;
       }
+
+      if (typeof rawValue === 'string') {
+        if (rawValue.includes('%')) return rawValue;
+        const num = parseFloat(rawValue);
+        if (!isNaN(num)) {
+          if (num > 0 && num <= 1) {
+            return `${Math.round(num * 100)}%`;
+          }
+          return `${Math.round(num)}%`;
+        }
+      }
+      return rawValue || '';
     }
-    
-    // Si no pudimos procesar el valor, devolverlo como está
-    return rawValue || '';
-  }
-  
-  // Para TIEMPO EFECTIVO DICTADO, siempre tratarlo como tiempo
-  if (headerName && headerName === 'TIEMPO EFECTIVO DICTADO') {
-    if (typeof rawValue === 'number' && rawValue >= 0 && rawValue < 1) {
-      const totalSeconds = Math.round(rawValue * 24 * 60 * 60);
-      const hours = Math.floor(totalSeconds / 3600);
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      const seconds = totalSeconds % 60;
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+    // TIEMPO EFECTIVO DICTADO
+    if (headerName && headerName === 'TIEMPO EFECTIVO DICTADO') {
+      if (typeof rawValue === 'number' && rawValue >= 0 && rawValue < 1) {
+        const totalSeconds = Math.round(rawValue * 24 * 60 * 60);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      }
+      if (rawValue instanceof Date) {
+        const hours = rawValue.getUTCHours();
+        const minutes = rawValue.getUTCMinutes();
+        const seconds = rawValue.getUTCSeconds();
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      }
+      if (typeof rawValue === 'object') return "";
     }
+
+    // Fechas
     if (rawValue instanceof Date) {
+      const year = rawValue.getUTCFullYear();
       const hours = rawValue.getUTCHours();
       const minutes = rawValue.getUTCMinutes();
       const seconds = rawValue.getUTCSeconds();
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+      if (year === 1899 || year === 1900) {
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      }
+
+      if (hours !== 0 || minutes !== 0 || seconds !== 0) {
+        return `${rawValue.toLocaleDateString('es-ES', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        })} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      } else {
+        return rawValue.toLocaleDateString('es-ES', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        });
+      }
     }
-  }
-  
-  // 1. MANEJO DE FECHAS Y HORAS MEJORADO
-  if (rawValue instanceof Date) {
-    const year = rawValue.getUTCFullYear();
-    const hours = rawValue.getUTCHours();
-    const minutes = rawValue.getUTCMinutes();
-    const seconds = rawValue.getUTCSeconds();
-    
-    if (year === 1899 || year === 1900) {
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }
-    
-    if (hours !== 0 || minutes !== 0 || seconds !== 0) {
-      return `${rawValue.toLocaleDateString('es-ES', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      })} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    } else {
-      return rawValue.toLocaleDateString('es-ES', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      });
-    }
-  }
-  
-  // 2. NÚMEROS QUE REPRESENTAN TIEMPO/FECHA DE EXCEL
-  if (typeof rawValue === 'number') {
-    if (cell.numFmt && cell.numFmt.includes('%')) {
-      return Math.round(rawValue * 100) + '%';
-    }
-    
-    const cellFormat = (cell.numFmt || '').toLowerCase();
-    
-    const isTimeFormat = cellFormat.includes('h:mm') || 
-                        cellFormat.includes('hh:mm') ||
-                        cellFormat.includes('[h]') ||
-                        cellFormat.includes('h:mm:ss') ||
-                        cellFormat.includes('hh:mm:ss') ||
-                        cellFormat.includes('am/pm') ||
-                        cellFormat.includes('a/p');
-    
-    const isDateFormat = cellFormat.includes('d/m') || 
-                        cellFormat.includes('dd/mm') ||
-                        cellFormat.includes('m/d') ||
-                        cellFormat.includes('yyyy') ||
-                        cellFormat.includes('dd-mm') ||
-                        cellFormat.includes('mm-dd');
-    
-    if (rawValue >= 0 && rawValue < 1 && (!isDateFormat || isTimeFormat)) {
-      const totalSeconds = Math.round(rawValue * 24 * 60 * 60);
-      const hours = Math.floor(totalSeconds / 3600);
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      const seconds = totalSeconds % 60;
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }
-    
-    if (rawValue >= 1 && rawValue < 100000) {
-      try {
-        const excelDate = new Date((rawValue - 25569) * 86400 * 1000);
-        
-        if (!isNaN(excelDate.getTime()) && 
-            excelDate.getFullYear() > 1900 && 
-            excelDate.getFullYear() < 2100) {
-          
-          if (isTimeFormat && !isDateFormat) {
-            const hours = excelDate.getUTCHours();
-            const minutes = excelDate.getUTCMinutes();
-            const seconds = excelDate.getUTCSeconds();
-            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+    // Números
+    if (typeof rawValue === 'number') {
+      if (cell.numFmt && cell.numFmt.includes('%')) {
+        return Math.round(rawValue * 100) + '%';
+      }
+
+      const cellFormat = (cell.numFmt || '').toLowerCase();
+      const isTimeFormat = cellFormat.includes('h:mm') || cellFormat.includes('hh:mm') || cellFormat.includes('[h]') || cellFormat.includes('h:mm:ss') || cellFormat.includes('hh:mm:ss') || cellFormat.includes('am/pm') || cellFormat.includes('a/p');
+      const isDateFormat = cellFormat.includes('d/m') || cellFormat.includes('dd/mm') || cellFormat.includes('m/d') || cellFormat.includes('yyyy') || cellFormat.includes('dd-mm') || cellFormat.includes('mm-dd');
+
+      if (rawValue >= 0 && rawValue < 1 && (!isDateFormat || isTimeFormat)) {
+        const totalSeconds = Math.round(rawValue * 24 * 60 * 60);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      }
+
+      if (rawValue >= 1 && rawValue < 100000) {
+        try {
+          const excelDate = new Date((rawValue - 25569) * 86400 * 1000);
+          if (!isNaN(excelDate.getTime()) && excelDate.getFullYear() > 1900 && excelDate.getFullYear() < 2100) {
+            if (isTimeFormat && !isDateFormat) {
+              const hours = excelDate.getUTCHours();
+              const minutes = excelDate.getUTCMinutes();
+              const seconds = excelDate.getUTCSeconds();
+              return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+            return excelDate.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
           }
-          
-          return excelDate.toLocaleDateString('es-ES', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric'
-          });
+        } catch (e) {
+          console.error('Error convirtiendo fecha:', e);
         }
-      } catch (e) {
-        console.error('Error convirtiendo fecha:', e);
       }
+      return String(rawValue);
     }
-    
-    return String(rawValue);
-  }
-  
-  // 3. OBJETOS COMPLEJOS DE EXCEL
-  if (typeof rawValue === 'object') {
-    if (rawValue.hyperlink) {
-      const text = rawValue.text || rawValue.hyperlink || '';
-      if (text.length > 50) {
-        return text.substring(0, 47) + '...';
+
+    // Objetos complejos
+    if (typeof rawValue === 'object') {
+      if (rawValue.hyperlink) {
+        const text = rawValue.text || rawValue.hyperlink || '';
+        return text.length > 50 ? text.substring(0, 47) + '...' : String(text).trim();
       }
-      return String(text).trim();
+      if (Array.isArray(rawValue.richText)) {
+        return rawValue.richText.map(rt => rt.text || '').join('').trim();
+      }
+      if (rawValue.text !== undefined) return String(rawValue.text).trim();
+      if (rawValue.result !== undefined) {
+        if (typeof rawValue.result === 'object' && rawValue.result !== null) return "";
+        return String(rawValue.result).trim();
+      }
+      if (rawValue.formula) return `=${rawValue.formula}`;
+      if (rawValue.value !== undefined) {
+        if (typeof rawValue.value === 'object' && rawValue.value !== null) return "";
+        return String(rawValue.value).trim();
+      }
+      console.warn(`⚠️ Objeto no procesado en columna "${headerName}":`, rawValue);
+      return "";
     }
-    
-    if (Array.isArray(rawValue.richText)) {
-      return rawValue.richText.map(rt => rt.text || '').join('').trim();
+
+    // Strings
+    const stringValue = String(rawValue).trim();
+    const datePatterns = [/(\d{1,2}\/\d{1,2}\/\d{4})/, /(\d{1,2}-\d{1,2}-\d{4})/, /(\d{4}-\d{1,2}-\d{1,2})/];
+    for (const pattern of datePatterns) {
+      const match = stringValue.match(pattern);
+      if (match) return match[1];
     }
-    
-    if (rawValue.text !== undefined) {
-      return String(rawValue.text).trim();
-    }
-    
-    if (rawValue.result !== undefined) {
-      return String(rawValue.result).trim();
-    }
-  }
-  
-  // 4. STRINGS
-  const stringValue = String(rawValue).trim();
-  
-  const datePatterns = [
-    /(\d{1,2}\/\d{1,2}\/\d{4})/,
-    /(\d{1,2}-\d{1,2}-\d{4})/,
-    /(\d{4}-\d{1,2}-\d{1,2})/
-  ];
-  
-  for (const pattern of datePatterns) {
-    const match = stringValue.match(pattern);
-    if (match) {
-      return match[1];
-    }
-  }
-  
-  const timePattern = /(\d{1,2}:\d{2}:\d{2})/;
-  const timeMatch = stringValue.match(timePattern);
-  if (timeMatch) {
-    return timeMatch[1];
-  }
-  
-  if (stringValue.length > 100) {
-    return stringValue.substring(0, 97) + '...';
-  }
-  
-  return stringValue;
-};
-  
-  console.log(`\n🗂️ LEYENDO DATOS desde fila ${headerRowIndex + 1}...`);
-  
-  const maxRowsToCheck = Math.min(worksheet.rowCount || 1000, 1000);
+    const timePattern = /(\d{1,2}:\d{2}:\d{2})/;
+    const timeMatch = stringValue.match(timePattern);
+    if (timeMatch) return timeMatch[1];
+    if (stringValue.length > 100) return stringValue.substring(0, 97) + '...';
+    return stringValue;
+  }; // ⭐ CIERRE DE getCellValue
 
   for (let rowIndex = headerRowIndex + 1; rowIndex <= maxRowsToCheck; rowIndex++) {
     const row = worksheet.getRow(rowIndex);
-    
-    // Crear objeto de datos usando los encabezados
     const rowData = {};
     let hasData = false;
-    
+
     sheetHeaders.forEach((header, colIndex) => {
-  const cell = row.getCell(colIndex + 1);
-  const cellValue = getCellValue(cell, colIndex + 1);
-  rowData[header] = cellValue;
-  
-  // Convertir a string antes de verificar
-  const stringValue = String(cellValue || '');
-  if (stringValue.trim() !== '') {
-    hasData = true;
-  }
-});
-    
-    // Solo agregar si tiene algún dato real
+      const cell = row.getCell(colIndex + 1);
+      const cellValue = getCellValue(cell, colIndex + 1);
+      rowData[header] = cellValue;
+      const stringValue = String(cellValue || '');
+      if (stringValue.trim() !== '') {
+        hasData = true;
+      }
+    });
+
     if (hasData) {
       loadedData.push(rowData);
     }
@@ -1068,7 +1229,7 @@ const getCellValue = (cell, columnIndex) => {
   }
 
   return { data: loadedData, headers: sheetHeaders };
-};
+} // ⭐ CIERRE DE loadSheetData
 
   const handleSheetChange = (sheetIndex) => {
     if (!workbookData) {
@@ -1751,6 +1912,156 @@ const calcularEficiencia = (row) => {
     "SALAZAR DANIEL", "DIAZ CESAR"
   ];
 
+  // ===== FUNCIONES AUXILIARES PARA AUTOCOMPLETADO CON ZOOM =====
+  
+  // Función para calcular tiempo de espera antes de iniciar la clase
+  const calcularTiempoEspera = (horaInicioZoom, horaProgramada) => {
+    if (!horaInicioZoom || !horaProgramada) return "";
+    
+    // Convertir tiempo HH:MM:SS a minutos totales desde medianoche
+    const timeToMinutes = (timeStr) => {
+      if (!timeStr || typeof timeStr !== 'string') return 0;
+      
+      let timeOnly = timeStr;
+      if (timeStr.includes('AM') || timeStr.includes('PM') || timeStr.includes('a. m.') || timeStr.includes('p. m.')) {
+        const match = timeStr.match(/(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M|[ap]\.\s*m\.)/i);
+        if (match) {
+          let hours = parseInt(match[1]);
+          const minutes = parseInt(match[2]);
+          const seconds = parseInt(match[3]);
+          const period = match[4].toUpperCase().replace(/\s|\./g, '');
+          
+          if (period.includes('P') && hours !== 12) hours += 12;
+          if (period.includes('A') && hours === 12) hours = 0;
+          
+          return hours * 60 + minutes + seconds / 60;
+        }
+      }
+      
+      const parts = timeOnly.split(':');
+      if (parts.length >= 2) {
+        const hours = parseInt(parts[0]) || 0;
+        const minutes = parseInt(parts[1]) || 0;
+        const seconds = parts.length >= 3 ? (parseInt(parts[2]) || 0) : 0;
+        return hours * 60 + minutes + seconds / 60;
+      }
+      
+      return 0;
+    };
+    
+    const minutosInicioZoom = timeToMinutes(horaInicioZoom);
+    const minutosProgramado = timeToMinutes(horaProgramada);
+    
+    // Calcular diferencia en minutos (programado - real)
+    const diferencia = minutosProgramado - minutosInicioZoom;
+    
+    return Math.max(0, Math.round(diferencia)); // No permitir valores negativos
+  };
+
+  // Función para calcular tiempo efectivo dictado
+  const calcularTiempoEfectivoDictado = (horaInicio, horaFin) => {
+    if (!horaInicio || !horaFin) return "";
+    
+    const timeToMinutes = (timeStr) => {
+      if (!timeStr || typeof timeStr !== 'string') return 0;
+      
+      let timeOnly = timeStr;
+      if (timeStr.includes('AM') || timeStr.includes('PM') || timeStr.includes('a. m.') || timeStr.includes('p. m.')) {
+        const match = timeStr.match(/(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M|[ap]\.\s*m\.)/i);
+        if (match) {
+          let hours = parseInt(match[1]);
+          const minutes = parseInt(match[2]);
+          const seconds = parseInt(match[3]);
+          const period = match[4].toUpperCase().replace(/\s|\./g, '');
+          
+          if (period.includes('P') && hours !== 12) hours += 12;
+          if (period.includes('A') && hours === 12) hours = 0;
+          
+          return hours * 60 + minutes + seconds / 60;
+        }
+      }
+      
+      const parts = timeOnly.split(':');
+      if (parts.length >= 2) {
+        const hours = parseInt(parts[0]) || 0;
+        const minutes = parseInt(parts[1]) || 0;
+        const seconds = parts.length >= 3 ? (parseInt(parts[2]) || 0) : 0;
+        return hours * 60 + minutes + seconds / 60;
+      }
+      
+      return 0;
+    };
+    
+    const minutosInicio = timeToMinutes(horaInicio);
+    const minutosFin = timeToMinutes(horaFin);
+    
+    let duracionMinutos = minutosFin - minutosInicio;
+    
+    // Manejar el caso de sesiones que cruzan medianoche
+    if (duracionMinutos < 0) {
+      duracionMinutos += 24 * 60;
+    }
+    
+    // Convertir a formato HH:MM:SS
+    const horas = Math.floor(duracionMinutos / 60);
+    const minutos = Math.floor(duracionMinutos % 60);
+    const segundos = Math.round((duracionMinutos % 1) * 60);
+    
+    return `${horas.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
+  };
+
+  // Función para calcular eficiencia
+  const calcularEficienciaZoom = (tiempoEfectivo, horasProgramadas) => {
+    if (!tiempoEfectivo || !horasProgramadas) return "";
+    
+    // Convertir tiempo efectivo a horas decimales
+    const timeToHours = (timeStr) => {
+      if (!timeStr) return 0;
+      const parts = timeStr.split(':');
+      if (parts.length >= 2) {
+        const hours = parseInt(parts[0]) || 0;
+        const minutes = parseInt(parts[1]) || 0;
+        const seconds = parts.length >= 3 ? (parseInt(parts[2]) || 0) : 0;
+        return hours + (minutes / 60) + (seconds / 3600);
+      }
+      return 0;
+    };
+    
+    const horasEfectivas = timeToHours(tiempoEfectivo);
+    const horasProgram = parseFloat(horasProgramadas) || 0;
+    
+    if (horasProgram === 0) return "0%";
+    
+    const eficiencia = (horasEfectivas / horasProgram) * 100;
+    return `${Math.round(eficiencia)}%`;
+  };
+
+  // Función para determinar observación según duración
+  const determinarObservacion = (tiempoEfectivo) => {
+    if (!tiempoEfectivo) return "";
+    
+    const timeToMinutes = (timeStr) => {
+      if (!timeStr) return 0;
+      const parts = timeStr.split(':');
+      if (parts.length >= 2) {
+        const hours = parseInt(parts[0]) || 0;
+        const minutes = parseInt(parts[1]) || 0;
+        return hours * 60 + minutes;
+      }
+      return 0;
+    };
+    
+    const minutos = timeToMinutes(tiempoEfectivo);
+    
+    if (minutos >= 170) { // 2h50m o más
+      return "✅";
+    } else if (minutos >= 120) { // Entre 2h y 2h50m
+      return "⚠️";
+    } else { // Menos de 2h
+      return "❌";
+    }
+  };
+
   // Función para verificar si inició 10 minutos antes
 const verificarInicio10MinutesAntes = (horaInicioZoom, horaProgramada) => {
   if (!horaInicioZoom || !horaProgramada) return "NO";
@@ -1961,6 +2272,7 @@ const displayData = useMemo(() => {
               availableSheets={availableSheets}
               selectedSheet={selectedSheet}
               onSheetChange={handleSheetChange}
+              onAutocompletarConZoom={handleAutocompletarConZoom}
             />
 
             <DataTable
