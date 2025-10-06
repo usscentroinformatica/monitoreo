@@ -23,7 +23,7 @@ function App() {
   const workbookData = activeTab?.workbookData || null;
   const currentHeaders = activeTab?.currentHeaders || [];
 
-  // Función para actualizar la pestaña activa
+  // Función para actualizar la pestaña activaasdasdasd
   const updateActiveTab = (updates) => {
     setTabs(prevTabs => 
       prevTabs.map(tab => 
