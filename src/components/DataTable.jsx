@@ -324,20 +324,7 @@ const ensureString = (value) => {
                         fontSize: header.includes('AULA') || header.length > 20 ? '10px' : '12px'
                       };
                       
-                      if (isTime) {
-                        cellClass += " time-cell";
-                        cellStyle.backgroundColor = "#f0f8ff";
-                        cellStyle.color = "#2c5aa0";
-                        cellStyle.fontFamily = "'Courier New', Monaco, monospace";
-                        cellStyle.fontWeight = "500";
-                        cellStyle.minWidth = "80px";
-                      } else if (isDate) {
-                        cellClass += " date-cell";
-                        cellStyle.backgroundColor = "#f5f5f0";
-                        cellStyle.color = "#5a5a00";
-                        cellStyle.fontFamily = "'Courier New', Monaco, monospace";
-                        cellStyle.minWidth = "100px";
-                      } else if (isLongText) {
+                      if (isLongText) {
                         cellClass += " cell-truncated";
                         cellStyle.maxWidth = "200px";
                         cellStyle.whiteSpace = "nowrap";
