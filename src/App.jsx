@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import ExcelJS from "exceljs";
 import ControlPanel from "./components/ControlPanel";
 import DataTable from "./components/DataTable";
@@ -118,6 +118,76 @@ function App() {
   const setSelectedSheet = (sheet) => updateActiveTab({ selectedSheet: sheet });
   const setWorkbookData = (wb) => updateActiveTab({ workbookData: wb });
   const setCurrentHeaders = (headers) => updateActiveTab({ currentHeaders: headers });
+
+  // ===== NUEVA FUNCIONALIDAD: Cargar plantillas al iniciar la app =====
+  useEffect(() => {
+    const loadTemplates = async () => {
+      try {
+        // Cargar plantilla Excel como primera pestaña
+        const excelResponse = await fetch(TEMPLATE_EXCEL);
+        if (excelResponse.ok) {
+          const arrayBuffer = await excelResponse.arrayBuffer();
+          const workbook = new ExcelJS.Workbook();
+          await workbook.xlsx.load(arrayBuffer);
+          
+          const sheetNames = workbook.worksheets.map((sheet, index) => ({
+            index,
+            name: sheet.name
+          }));
+          
+          const worksheet = workbook.worksheets[0];
+          const { data: loadedData, headers: sheetHeaders } = loadSheetData(worksheet);
+          
+          createNewTab("Plantilla Excel (EJEMPLO)", {
+            data: loadedData,
+            availableSheets: sheetNames,
+            workbookData: workbook,
+            currentHeaders: sheetHeaders
+          });
+        }
+
+        // Cargar plantilla CSV como zoomData en la primera pestaña (después de crear la pestaña Excel)
+        setTimeout(async () => {  // Pequeño delay para asegurar que la primera pestaña exista
+          if (tabs.length > 0) {
+            const csvResponse = await fetch(TEMPLATE_CSV);
+            if (csvResponse.ok) {
+              const text = await csvResponse.text();
+              
+              const lines = text.split('\n').filter(line => line.trim());
+              let delimiter = ';';
+              
+              if (!lines[0].includes(';')) {
+                delimiter = lines[0].includes('\t') ? '\t' : ',';
+              }
+              
+              const headers = lines[0].split(delimiter).map(h => h.trim().replace(/^"|"$/g, ''));
+              
+              const parsedZoomData = [];
+              for (let i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                
+                const values = lines[i].split(delimiter).map(v => v.trim().replace(/^"|"$/g, ''));
+                const row = {};
+                headers.forEach((header, index) => {
+                  row[header] = values[index] || "";
+                });
+                parsedZoomData.push(row);
+              }
+              
+              // Actualizar la primera pestaña con zoomData
+              setTabs(prevTabs => prevTabs.map(tab => 
+                tab.id === prevTabs[0].id ? { ...tab, zoomData: parsedZoomData } : tab
+              ));
+            }
+          }
+        }, 500);
+      } catch (error) {
+        console.error('Error al cargar plantillas iniciales:', error);
+      }
+    };
+
+    loadTemplates();
+  }, []);
 
   // ===== FUNCIONES DE UTILIDAD =====
   const normalizeDocenteName = (name) => {
