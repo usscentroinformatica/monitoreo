@@ -223,7 +223,7 @@ function ControlPanel({
         
         <div className="mt-3">
           <p className="text-xs text-gray-600">
-            Autocompletar MONITOREO (16 sesiones/curso)
+            Autocompletar MONITOREO (16 sesiones/curso): Crea automáticamente 16 filas por curso/docente y las autocompleta con datos de Zoom
           </p>
         </div>
         
