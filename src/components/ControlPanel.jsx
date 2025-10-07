@@ -1,6 +1,8 @@
 import React from "react";
 import * as XLSX from 'xlsx';
 
+// Panel de control para carga de archivos, filtros y exportación.
+// Recibe callbacks para cargar Excel/CSV, cambiar hoja y exportar; además muestra el conteo filtrado.
 function ControlPanel({
   selectedDocente,
   setSelectedDocente,
@@ -20,6 +22,8 @@ function ControlPanel({
   selectedSheet,
   onSheetChange
 }) {
+  // Exporta los datos visibles a Excel con formato básico si no se entrega un exportador externo.
+  // Cabeceras en negrita, bordes finos y ancho de columna ajustado; detecta fechas/horas como texto legible.
   const handleExport = () => {
     if (onExport) {
       onExport();
@@ -219,7 +223,7 @@ function ControlPanel({
         
         <div className="mt-3">
           <p className="text-xs text-gray-600">
-            Autocompletar MONITOREO (16 sesiones/curso): Crea automáticamente 16 filas por curso/docente y las autocompleta con datos de Zoom
+            Autocompletar MONITOREO (16 sesiones/curso)
           </p>
         </div>
         
