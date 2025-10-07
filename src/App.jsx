@@ -1,10 +1,10 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import ExcelJS from "exceljs";
 import ControlPanel from "./components/ControlPanel";
 import DataTable from "./components/DataTable";
 
 // Rutas a los archivos de plantilla
-const TEMPLATE_EXCEL = "/src/archivos/EJEMPLO.xlsx";
+const TEMPLATE_EXCEL = "/src/archivos/EJEMPLO(2).xlsx";
 const TEMPLATE_CSV = "/src/archivos/meetings_Docentes_CIS_2025_09_08_2025_09_21.csv";
 
 // Función para descargar archivo Excel de plantilla
@@ -118,76 +118,6 @@ function App() {
   const setSelectedSheet = (sheet) => updateActiveTab({ selectedSheet: sheet });
   const setWorkbookData = (wb) => updateActiveTab({ workbookData: wb });
   const setCurrentHeaders = (headers) => updateActiveTab({ currentHeaders: headers });
-
-  // ===== NUEVA FUNCIONALIDAD: Cargar plantillas al iniciar la app =====
-  useEffect(() => {
-    const loadTemplates = async () => {
-      try {
-        // Cargar plantilla Excel como primera pestaña
-        const excelResponse = await fetch(TEMPLATE_EXCEL);
-        if (excelResponse.ok) {
-          const arrayBuffer = await excelResponse.arrayBuffer();
-          const workbook = new ExcelJS.Workbook();
-          await workbook.xlsx.load(arrayBuffer);
-          
-          const sheetNames = workbook.worksheets.map((sheet, index) => ({
-            index,
-            name: sheet.name
-          }));
-          
-          const worksheet = workbook.worksheets[0];
-          const { data: loadedData, headers: sheetHeaders } = loadSheetData(worksheet);
-          
-          createNewTab("Plantilla Excel (EJEMPLO)", {
-            data: loadedData,
-            availableSheets: sheetNames,
-            workbookData: workbook,
-            currentHeaders: sheetHeaders
-          });
-        }
-
-        // Cargar plantilla CSV como zoomData en la primera pestaña (después de crear la pestaña Excel)
-        setTimeout(async () => {  // Pequeño delay para asegurar que la primera pestaña exista
-          if (tabs.length > 0) {
-            const csvResponse = await fetch(TEMPLATE_CSV);
-            if (csvResponse.ok) {
-              const text = await csvResponse.text();
-              
-              const lines = text.split('\n').filter(line => line.trim());
-              let delimiter = ';';
-              
-              if (!lines[0].includes(';')) {
-                delimiter = lines[0].includes('\t') ? '\t' : ',';
-              }
-              
-              const headers = lines[0].split(delimiter).map(h => h.trim().replace(/^"|"$/g, ''));
-              
-              const parsedZoomData = [];
-              for (let i = 1; i < lines.length; i++) {
-                if (!lines[i].trim()) continue;
-                
-                const values = lines[i].split(delimiter).map(v => v.trim().replace(/^"|"$/g, ''));
-                const row = {};
-                headers.forEach((header, index) => {
-                  row[header] = values[index] || "";
-                });
-                parsedZoomData.push(row);
-              }
-              
-              // Actualizar la primera pestaña con zoomData
-              setTabs(prevTabs => prevTabs.map(tab => 
-                tab.id === prevTabs[0].id ? { ...tab, zoomData: parsedZoomData } : tab
-              ));
-            }
-          }
-        }, 500);
-      } catch (error) {
-        console.error('Error al cargar plantillas iniciales:', error);
-      }
-    };
-
-    loadTemplates();
-  }, []);
 
   // ===== FUNCIONES DE UTILIDAD =====
   const normalizeDocenteName = (name) => {
@@ -2261,6 +2191,7 @@ const displayData = useMemo(() => {
 }, [filteredData, selectedDocente, data]);
 
   // ===== RENDER =====
+  // ===== RENDER =====
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-4">
       <div className="max-w-full mx-auto">
@@ -2308,22 +2239,6 @@ const displayData = useMemo(() => {
         {/* CONTENIDO DE LA PESTAÑA ACTIVA */}
         {activeTab ? (
           <>
-            {/* Botones de descarga de plantillas */}
-            <div className="flex gap-4 mb-4 px-4">
-              <button
-                onClick={downloadExcelTemplate}
-                className="px-4 py-2 bg-green-600 text-white hover:bg-green-700 rounded-md font-semibold text-sm"
-              >
-                Descargar Plantilla Excel
-              </button>
-              <button
-                onClick={downloadCSVTemplate}
-                className="px-4 py-2 bg-green-600 text-white hover:bg-green-700 rounded-md font-semibold text-sm"
-              >
-                Descargar Plantilla CSV
-              </button>
-            </div>
-
             <ControlPanel
               selectedDocente={selectedDocente}
               setSelectedDocente={setSelectedDocente}
@@ -2355,12 +2270,33 @@ const displayData = useMemo(() => {
           </>
         ) : (
           <div className="bg-white rounded-b-xl shadow-2xl p-12 text-center">
-            <h2 className="text-2xl font-bold text-gray-700 mb-4">
+            <h2 className="text-2xl font-bold text-gray-700 mb-6">
               No hay archivos abiertos
             </h2>
-            <p className="text-gray-500 mb-6">
+            <p className="text-gray-500 mb-8">
               Haz clic en "+ Nueva Pestaña" para cargar un archivo Excel
             </p>
+            
+            {/* Botones de descarga de plantillas - Pantalla principal */}
+            <div className="flex flex-col items-center gap-4 mt-8">
+              <p className="text-gray-600 font-semibold text-lg mb-2">
+                📥 Descargar plantillas de ejemplo:
+              </p>
+              <div className="flex gap-4">
+                <button
+                  onClick={downloadExcelTemplate}
+                  className="px-6 py-3 bg-green-600 text-white hover:bg-green-700 rounded-lg font-semibold text-sm shadow-md transition-all hover:shadow-lg"
+                >
+                  📄 Descargar Plantilla Excel
+                </button>
+                <button
+                  onClick={downloadCSVTemplate}
+                  className="px-6 py-3 bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-semibold text-sm shadow-md transition-all hover:shadow-lg"
+                >
+                  📊 Descargar Plantilla CSV (Zoom)
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
