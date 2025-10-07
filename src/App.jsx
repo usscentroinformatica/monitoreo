@@ -87,7 +87,9 @@ function App() {
       availableSheets: initialData.availableSheets || [],
       selectedSheet: 0,
       workbookData: initialData.workbookData || null,
-      currentHeaders: initialData.currentHeaders || []
+      currentHeaders: initialData.currentHeaders || [],
+      // Caché por hoja
+      sheetData: initialData.sheetData || { 0: { data: initialData.data || [], headers: initialData.currentHeaders || [] } }
     };
     
     setTabs(prev => [...prev, newTab]);
@@ -109,7 +111,12 @@ function App() {
   };
 
   // Wrappers para los setters
-  const setData = (newData) => updateActiveTab({ data: newData });
+  const setData = (newData) => {
+    const currentIndex = activeTab?.selectedSheet ?? 0;
+    const prevSheetData = activeTab?.sheetData || {};
+    const updatedSheetData = { ...prevSheetData, [currentIndex]: { data: newData, headers: currentHeaders } };
+    updateActiveTab({ data: newData, sheetData: updatedSheetData });
+  };
   const setZoomData = (newZoomData) => updateActiveTab({ zoomData: newZoomData });
   const setSelectedDocente = (docente) => updateActiveTab({ selectedDocente: docente });
   const setNumFilas = (num) => updateActiveTab({ numFilas: num });
@@ -117,7 +124,13 @@ function App() {
   const setAvailableSheets = (sheets) => updateActiveTab({ availableSheets: sheets });
   const setSelectedSheet = (sheet) => updateActiveTab({ selectedSheet: sheet });
   const setWorkbookData = (wb) => updateActiveTab({ workbookData: wb });
-  const setCurrentHeaders = (headers) => updateActiveTab({ currentHeaders: headers });
+  const setCurrentHeaders = (headers) => {
+    const currentIndex = activeTab?.selectedSheet ?? 0;
+    const prevSheetData = activeTab?.sheetData || {};
+    const prevData = prevSheetData[currentIndex]?.data || data;
+    const updatedSheetData = { ...prevSheetData, [currentIndex]: { data: prevData, headers } };
+    updateActiveTab({ currentHeaders: headers, sheetData: updatedSheetData });
+  };
 
   // ===== FUNCIONES DE UTILIDAD =====
   const normalizeDocenteName = (name) => {
@@ -195,8 +208,57 @@ function App() {
 
   const extractDate = (dateTimeStr) => {
     if (!dateTimeStr) return "";
-    const match = dateTimeStr.match(/^([A-Za-z]+\s+\d{1,2},\s+\d{4})/);
-    return match ? match[1] : "";
+    const s = String(dateTimeStr).trim();
+
+    // Mes con nombre (es/en): "September 22, 2024" / "Septiembre 22, 2024"
+    const m1 = s.match(/([A-Za-zÁÉÍÓÚáéíóúñÑ]+)\s+(\d{1,2}),\s*(\d{4})/);
+    if (m1) {
+      const monthMap = {
+        JANUARY:1,FEBRUARY:2,MARCH:3,APRIL:4,MAY:5,JUNE:6,JULY:7,AUGUST:8,SEPTEMBER:9,OCTOBER:10,NOVEMBER:11,DECEMBER:12,
+        ENERO:1,FEBRERO:2,MARZO:3,ABRIL:4,MAYO:5,JUNIO:6,JULIO:7,AGOSTO:8,SEPTIEMBRE:9,OCTUBRE:10,NOVIEMBRE:11,DICIEMBRE:12
+      };
+      const mon = (m1[1] || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const d = String(m1[2]).padStart(2,'0');
+      const y = m1[3];
+      const mmNum = monthMap[mon];
+      if (mmNum) {
+        const mm = String(mmNum).padStart(2,'0');
+        return `${d}/${mm}/${y}`;
+      }
+    }
+
+    // yyyy-mm-dd
+    const m2 = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m2) {
+      const y = m2[1], m = String(m2[2]).padStart(2,'0'), d = String(m2[3]).padStart(2,'0');
+      return `${d}/${m}/${y}`;
+    }
+
+    // dd/mm/yyyy o mm/dd/yyyy
+    const m3 = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+    if (m3) {
+      let a = parseInt(m3[1],10), b = parseInt(m3[2],10); let y = m3[3];
+      if (a > 12 && b <= 12) { // dd/mm
+        const dd = String(a).padStart(2,'0'); const mm = String(b).padStart(2,'0');
+        y = y.length === 2 ? `20${y}`: y; return `${dd}/${mm}/${y}`;
+      }
+      if (b > 12 && a <= 12) { // mm/dd
+        const dd = String(b).padStart(2,'0'); const mm = String(a).padStart(2,'0');
+        y = y.length === 2 ? `20${y}`: y; return `${dd}/${mm}/${y}`;
+      }
+      const dd = String(a).padStart(2,'0'); const mm = String(b).padStart(2,'0');
+      y = y.length === 2 ? `20${y}`: y; return `${dd}/${mm}/${y}`;
+    }
+
+    // Fallback con Date()
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      const dd = String(d.getDate()).padStart(2,'0');
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const yy = String(d.getFullYear());
+      return `${dd}/${mm}/${yy}`;
+    }
+    return s;
   };
 
   const extractTime = (dateTimeStr) => {
@@ -267,7 +329,7 @@ function App() {
 
   const extractCursoFromTema = (tema) => {
     if (!tema) return "";
-    const match = tema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
+    const match = tema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z0-9]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
     return match ? match[1].trim() : tema;
   };
 
@@ -340,7 +402,7 @@ function App() {
     const updateRowWithZoom = (row, zoomInfo) => {
       const updatedRow = { ...row };
       
-      const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
+      const possibleDateCols = ['DIA', 'Dia', 'Fecha', 'FECHA', 'Columna 13', 'COLUMNA 13'];
       const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
       const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
       const possibleFinalizaCols = ['FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)', 'Hora Finalización Zoom'];
@@ -1100,7 +1162,8 @@ if (mapaSesiones.has(sesion)) {
         data: loadedData,
         availableSheets: sheetNames,
         workbookData: workbook,
-        currentHeaders: sheetHeaders
+        currentHeaders: sheetHeaders,
+        sheetData: { 0: { data: loadedData, headers: sheetHeaders } }
       });
       
     } catch (error) {
@@ -1486,14 +1549,37 @@ if (mapaSesiones.has(sesion)) {
       return;
     }
 
-    setSelectedSheet(sheetIndex);
-    
+    const cache = activeTab?.sheetData || {};
+    const prevSheetData = activeTab?.sheetData || {};
+
+    // Usar caché si existe para esta hoja
+    if (cache[sheetIndex]) {
+      const headers = cache[sheetIndex].headers || [];
+      const dataForSheet = cache[sheetIndex].data || [];
+      const updatedSheetData = { ...prevSheetData, [sheetIndex]: { data: dataForSheet, headers } };
+      updateActiveTab({
+        selectedSheet: sheetIndex,
+        currentHeaders: headers,
+        data: dataForSheet,
+        sheetData: updatedSheetData,
+        selectedDocente: ""
+      });
+      return;
+    }
+
+    // Si no hay caché, leer del workbook
     const worksheet = workbookData.worksheets[sheetIndex];
     const { data: loadedData, headers: sheetHeaders } = loadSheetData(worksheet);
-    
-    setData(loadedData);
-    setCurrentHeaders(sheetHeaders);
-    setSelectedDocente("");  
+
+    // Guardar en caché y actualizar estado en un solo paso
+    const updatedSheetData = { ...prevSheetData, [sheetIndex]: { data: loadedData, headers: sheetHeaders } };
+    updateActiveTab({
+      selectedSheet: sheetIndex,
+      currentHeaders: sheetHeaders,
+      data: loadedData,
+      sheetData: updatedSheetData,
+      selectedDocente: ""
+    });
   };
 
   const getUniqueCursosFromZoom = (zoomData, docente) => {
@@ -1505,7 +1591,7 @@ if (mapaSesiones.has(sesion)) {
       
       if (!matchDocente(docente, zoomDocente) || !zoomTema) return;
       
-      const match = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)/i);
+      const match = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z0-9]+)/i);
       if (match) {
         const curso = match[1].trim();
         cursos.add(curso);
