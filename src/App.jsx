@@ -122,7 +122,14 @@ function App() {
   // ===== FUNCIONES DE UTILIDAD =====
   const normalizeDocenteName = (name) => {
     if (!name) return "";
-    return name.toUpperCase().trim().split(/\s+/).sort().join(" ");
+    // Ignorar iniciales de una sola letra y ordenar palabras para empatar distintos órdenes
+    return name
+      .toUpperCase()
+      .trim()
+      .split(/\s+/)
+      .filter(w => w.length > 1)
+      .sort()
+      .join(" ");
   };
 
   const normalizeCursoName = (name) => {
@@ -161,6 +168,16 @@ function App() {
     });
     
     return result;
+  };
+
+  // Normalización robusta de SECCION (PEAD-a, PEAD a, A, a1, etc.)
+  const normalizeSeccion = (value) => {
+    if (!value) return "";
+    return String(value)
+      .toUpperCase()
+      .trim()
+      .replace(/^PEAD[-_ ]?/, "")
+      .replace(/[^A-Z0-9]/g, "");
   };
 
   const matchDocente = (docenteExcel, docenteZoom) => {
@@ -397,7 +414,7 @@ function App() {
           if (sesionesUsadasGlobal.has(claveZoom)) continue;
 
           const cursoMatch = row.CURSO && normalizeCursoName(row.CURSO) === normalizeCursoName(cursoZoom);
-          const seccionMatch = row.SECCION && row.SECCION.toUpperCase() === seccionZoom.toUpperCase();
+          const seccionMatch = row.SECCION && normalizeSeccion(row.SECCION) === normalizeSeccion(seccionZoom);
           const sesionMatch = row.SESION && parseInt(String(row.SESION)) === sesionZoom;
 
           if (cursoMatch && seccionMatch && sesionMatch) {
@@ -627,7 +644,7 @@ function App() {
         const existingRow = newData.find(row => 
           row.DOCENTE === docenteActual &&
           normalizeCursoName(row.CURSO || "") === normalizeCursoName(cursoZoom) &&
-          (row.SECCION || "").toUpperCase() === seccionZoom.toUpperCase() &&
+          normalizeSeccion(row.SECCION || "") === normalizeSeccion(seccionZoom) &&
           parseInt(String(row.SESION || 0)) === sesionZoom
         );
 
@@ -754,7 +771,7 @@ function App() {
           const sesionZoom = sesionNumeroStr ? parseInt(sesionNumeroStr) : 0;
           
           return normalizeCursoName(cursoZoom) === normalizeCursoName(curso) &&
-                 seccionZoom.toUpperCase() === seccion.toUpperCase() &&
+                 normalizeSeccion(seccionZoom) === normalizeSeccion(seccion) &&
                  sesionZoom === parseInt(sesion);
         });
 
@@ -2415,11 +2432,43 @@ const dropdownOptions = {
 
 const displayData = useMemo(() => {
   if (!selectedDocente) return data;
-  
-  return filteredData.map((row, index) => ({
-    ...row,
-    SESION: index + 1
-  }));
+
+  // Agrupar por CURSO/SECCIÓN, ordenar dentro del grupo y renumerar 1..16.
+  const normalizeSeccionLocal = (v) => (v ? String(v).toUpperCase().trim().replace(/^PEAD[-_ ]?/i, '').replace(/[^A-Z0-9]/g, '') : '');
+  const parseIntSafe = (v) => {
+    const n = parseInt(String(v));
+    return Number.isNaN(n) ? null : n;
+  };
+
+  const grouped = new Map();
+  filteredData.forEach((row, idx) => {
+    const key = `${normalizeCursoName(row.CURSO || '')}|||${normalizeSeccionLocal(row.SECCION || row['SECCIÓN'] || '')}`;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push({ row, idx, originalIndex: idx });
+  });
+
+  const out = [];
+
+  const keys = Array.from(grouped.keys()).sort(); // ordenar grupos por curso/sección normalizados
+
+  keys.forEach((key) => {
+    const entries = grouped.get(key).slice();
+
+    // Orden dentro del grupo: por SESION numérica si existe, si no por índice original
+    entries.sort((a, b) => {
+      const aS = parseIntSafe(a.row.SESION);
+      const bS = parseIntSafe(b.row.SESION);
+      if (aS !== null && bS !== null && aS !== bS) return aS - bS;
+      return a.originalIndex - b.originalIndex;
+    });
+
+    // Renumerar 1..16 y limitar a 16 visibles por grupo
+    entries.slice(0, 16).forEach((entry, i) => {
+      out.push({ ...entry.row, SESION: i + 1 });
+    });
+  });
+
+  return out;
 }, [filteredData, selectedDocente, data]);
 
   // ===== RENDER =====
