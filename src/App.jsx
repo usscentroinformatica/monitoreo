@@ -1179,6 +1179,9 @@ if (mapaSesiones.has(sesion)) {
   const loadedData = [];
   let sheetHeaders = [];
   let headerRowIndex = 1;
+  const isMonitoreo = (worksheet.name || '').toLowerCase().includes('monitoreo');
+  const MAX_SCAN_ROWS = isMonitoreo ? 10 : 3;
+  const MAX_COLS = isMonitoreo ? 60 : 25;
 
   // Función auxiliar MUY ROBUSTA para extraer texto de celdas
   const extractCellText = (cell) => {
@@ -1217,8 +1220,17 @@ if (mapaSesiones.has(sesion)) {
       
       // Resultado de fórmula
       if (rawValue.result !== undefined) {
-        return String(rawValue.result).trim();
+        const res = rawValue.result;
+        if (res instanceof Date) {
+          return res.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }).trim();
+        }
+        if (typeof res === 'number' || typeof res === 'string') {
+          return String(res).trim();
+        }
+        return '';
       }
+      // Si es un objeto no reconocible, no devolver [object Object]
+      return '';
     }
     
     // Fallback: convertir a string
@@ -1238,12 +1250,13 @@ if (mapaSesiones.has(sesion)) {
 
   console.log('🔍 DETECTANDO ENCABEZADOS - MODO SIMPLE Y DIRECTO');
   
-  // MÉTODO 1: Leer directamente las primeras 3 filas SIN filtros
-  for (let rowNum = 1; rowNum <= 3; rowNum++) {
+  let bestRowNum = -1; let bestCount = 0; let bestKeywordRowNum = -1; let bestKeywordCount = 0; const headerKeywords = ['DOCENTE','CURSO','SECCION','SECCIÓN','SESION','HORA INICIO','HORA FIN','FECHA','DIA','COLUMNA 13'];
+  // MÉTODO 1: Leer directamente las primeras filas SIN filtros
+  for (let rowNum = 1; rowNum <= MAX_SCAN_ROWS; rowNum++) {
     console.log(`\n📋 === FILA ${rowNum} ===`);
     
     const row = worksheet.getRow(rowNum);
-    const allCells = readAllCellsInRow(row, 25);
+    const allCells = readAllCellsInRow(row, MAX_COLS);
     
     // Mostrar TODO lo que encuentra
     allCells.forEach((cellText, index) => {
@@ -1255,6 +1268,11 @@ if (mapaSesiones.has(sesion)) {
     // Contar celdas con contenido real
     const nonEmptyCells = allCells.filter(cell => cell && cell.trim() !== '').length;
     console.log(`   📊 Total celdas con contenido: ${nonEmptyCells}`);
+    if (isMonitoreo && nonEmptyCells > bestCount) { bestCount = nonEmptyCells; bestRowNum = rowNum; }
+    // Conteo de palabras clave típicas de MONITOREO
+    const upperCells = allCells.map(c => (c || '').toString().toUpperCase().trim());
+    const matchCount = headerKeywords.reduce((acc, k) => acc + (upperCells.includes(k) ? 1 : 0), 0);
+    if (isMonitoreo && matchCount > bestKeywordCount) { bestKeywordCount = matchCount; bestKeywordRowNum = rowNum; }
     
     // Si tiene un número razonable de celdas con contenido, usar esta fila
     if (nonEmptyCells >= 5) {
@@ -1281,14 +1299,40 @@ if (mapaSesiones.has(sesion)) {
     }
   }
 
+  // Ajuste adicional (MONITOREO): si detectamos una fila con palabras clave típicas, úsala como encabezados
+  if (isMonitoreo && bestKeywordRowNum > 0) {
+    const headersUpper = sheetHeaders.map(h => (h || '').toString().toUpperCase());
+    const hasAnyKeyword = headerKeywords.some(k => headersUpper.includes(k));
+    if (sheetHeaders.length === 0 || !hasAnyKeyword) {
+      const kwRow = worksheet.getRow(bestKeywordRowNum);
+      const kwCells = readAllCellsInRow(kwRow, MAX_COLS);
+      let validHeaders = [...kwCells];
+      while (validHeaders.length > 0 && (!validHeaders[validHeaders.length - 1] || validHeaders[validHeaders.length - 1].trim() === '')) {
+        validHeaders.pop();
+      }
+      sheetHeaders = validHeaders.map((header, index) => header && header.trim() !== '' ? header.trim() : `COLUMNA_${index + 1}`);
+      headerRowIndex = bestKeywordRowNum;
+    }
+  }
+  // FALLBACK: Si no encontró nada en el método 1, intentar con la mejor fila detectada para MONITOREO
+  if (sheetHeaders.length === 0 && isMonitoreo && bestRowNum > 0) {
+    const bestRow = worksheet.getRow(bestRowNum);
+    const bestCells = readAllCellsInRow(bestRow, MAX_COLS);
+    let validHeaders = [...bestCells];
+    while (validHeaders.length > 0 && (!validHeaders[validHeaders.length - 1] || validHeaders[validHeaders.length - 1].trim() === '')) {
+      validHeaders.pop();
+    }
+    sheetHeaders = validHeaders.map((header, index) => header && header.trim() !== '' ? header.trim() : `COLUMNA_${index + 1}`);
+    headerRowIndex = bestRowNum;
+  }
   // FALLBACK: Si no encontró nada, usar la primera fila que tenga cualquier dato
   if (sheetHeaders.length === 0) {
     console.log('⚠️ FALLBACK: Buscando cualquier fila con datos...');
     
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= (isMonitoreo ? 10 : 5); i++) {
       console.log(`   Probando fila ${i}...`);
       const row = worksheet.getRow(i);
-      const cells = readAllCellsInRow(row, 25);
+      const cells = readAllCellsInRow(row, MAX_COLS);
       const nonEmpty = cells.filter(c => c && c.trim() !== '');
       
       if (nonEmpty.length > 0) {
@@ -1335,8 +1379,8 @@ if (mapaSesiones.has(sesion)) {
     const rawValue = cell.value;
     const headerName = sheetHeaders[columnIndex - 1];
 
-    // Números específicos
-    if (headerName && ['SESION', 'TIEMPO DE ESPERA ANTES DE INICIAR LA CLASE', 'HORAS PROGRAMADAS'].includes(headerName.toUpperCase())) {
+    // Números específicos solo para SESION (no tocar tiempos ni duraciones)
+    if (headerName && ['SESION'].includes(headerName.toUpperCase())) {
       if (typeof rawValue === 'number') {
         if (rawValue === 0) return "0";
         return Math.round(rawValue);
@@ -1349,8 +1393,12 @@ if (mapaSesiones.has(sesion)) {
         }
       }
       if (typeof rawValue === 'object') {
-        if (rawValue.result !== undefined) return String(rawValue.result);
-        if (rawValue.value !== undefined) return String(rawValue.value);
+        const res = rawValue.result ?? rawValue.value;
+        if (res !== undefined) {
+          const num = parseInt(res);
+          if (!isNaN(num)) return num;
+          return String(res);
+        }
         return "";
       }
     }
@@ -1398,12 +1446,16 @@ if (mapaSesiones.has(sesion)) {
 
     // TIEMPO EFECTIVO DICTADO
     if (headerName && headerName === 'TIEMPO EFECTIVO DICTADO') {
-      if (typeof rawValue === 'number' && rawValue >= 0 && rawValue < 1) {
-        const totalSeconds = Math.round(rawValue * 24 * 60 * 60);
+      const toHMS = (num) => {
+        const totalSeconds = Math.round(num * 24 * 60 * 60);
         const hours = Math.floor(totalSeconds / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
         const seconds = totalSeconds % 60;
         return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      };
+      if (typeof rawValue === 'number') {
+        if (rawValue >= 0 && rawValue < 1) return toHMS(rawValue);
+        return String(rawValue);
       }
       if (rawValue instanceof Date) {
         const hours = rawValue.getUTCHours();
@@ -1411,7 +1463,21 @@ if (mapaSesiones.has(sesion)) {
         const seconds = rawValue.getUTCSeconds();
         return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
       }
-      if (typeof rawValue === 'object') return "";
+      if (typeof rawValue === 'object') {
+        const res = rawValue.result ?? rawValue.value;
+        if (res instanceof Date) {
+          const hours = res.getUTCHours();
+          const minutes = res.getUTCMinutes();
+          const seconds = res.getUTCSeconds();
+          return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+        if (typeof res === 'number') {
+          if (res >= 0 && res < 1) return toHMS(res);
+          return String(res);
+        }
+        if (typeof res === 'string') return res;
+        return "";
+      }
     }
 
     // Fechas
@@ -1477,7 +1543,7 @@ if (mapaSesiones.has(sesion)) {
       return String(rawValue);
     }
 
-    // Objetos complejos
+    // Objetos complejos (manejar correctamente resultados de fórmulas y tiempos)
     if (typeof rawValue === 'object') {
       if (rawValue.hyperlink) {
         const text = rawValue.text || rawValue.hyperlink || '';
@@ -1487,14 +1553,69 @@ if (mapaSesiones.has(sesion)) {
         return rawValue.richText.map(rt => rt.text || '').join('').trim();
       }
       if (rawValue.text !== undefined) return String(rawValue.text).trim();
+      const handleNumericLike = (num) => {
+        const cellFormat = (cell.numFmt || '').toLowerCase();
+        const isTimeFormat = cellFormat.includes('h:mm') || cellFormat.includes('hh:mm') || cellFormat.includes('[h]') || cellFormat.includes('h:mm:ss') || cellFormat.includes('hh:mm:ss') || cellFormat.includes('am/pm') || cellFormat.includes('a/p');
+        const isDateFormat = cellFormat.includes('d/m') || cellFormat.includes('dd/mm') || cellFormat.includes('m/d') || cellFormat.includes('yyyy') || cellFormat.includes('dd-mm') || cellFormat.includes('mm-dd');
+        if (cell.numFmt && cell.numFmt.includes('%')) {
+          return Math.round(num * 100) + '%';
+        }
+        if (num >= 0 && num < 1 && (!isDateFormat || isTimeFormat)) {
+          const totalSeconds = Math.round(num * 24 * 60 * 60);
+          const hours = Math.floor(totalSeconds / 3600);
+          const minutes = Math.floor((totalSeconds % 3600) / 60);
+          const seconds = totalSeconds % 60;
+          return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+        if (num >= 1 && num < 100000) {
+          try {
+            const excelDate = new Date((num - 25569) * 86400 * 1000);
+            if (!isNaN(excelDate.getTime()) && excelDate.getFullYear() > 1900 && excelDate.getFullYear() < 2100) {
+              if (isTimeFormat && !isDateFormat) {
+                const hours = excelDate.getUTCHours();
+                const minutes = excelDate.getUTCMinutes();
+                const seconds = excelDate.getUTCSeconds();
+                return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+              }
+              return excelDate.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            }
+          } catch (e) {}
+        }
+        return String(num);
+      };
       if (rawValue.result !== undefined) {
-        if (typeof rawValue.result === 'object' && rawValue.result !== null) return "";
-        return String(rawValue.result).trim();
+        const res = rawValue.result;
+        if (res instanceof Date) {
+          const hours = res.getUTCHours();
+          const minutes = res.getUTCMinutes();
+          const seconds = res.getUTCSeconds();
+          return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+        if (typeof res === 'number') {
+          return handleNumericLike(res);
+        }
+        if (typeof res === 'string') {
+          return res.trim();
+        }
+        return "";
       }
       if (rawValue.formula) return `=${rawValue.formula}`;
       if (rawValue.value !== undefined) {
-        if (typeof rawValue.value === 'object' && rawValue.value !== null) return "";
-        return String(rawValue.value).trim();
+        const val = rawValue.value;
+        if (val instanceof Date) {
+          const hours = val.getUTCHours();
+          const minutes = val.getUTCMinutes();
+          const seconds = val.getUTCSeconds();
+          if (hours !== 0 || minutes !== 0 || seconds !== 0) {
+            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+          }
+          return val.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        }
+        if (typeof val === 'number') {
+          return handleNumericLike(val);
+        }
+        if (typeof val === 'object' && val !== null) return "";
+        return String(val).trim();
       }
       console.warn(`⚠️ Objeto no procesado en columna "${headerName}":`, rawValue);
       return "";
@@ -1538,6 +1659,67 @@ if (mapaSesiones.has(sesion)) {
   if (loadedData.length > 0) {
     console.log("Primera fila cargada:", loadedData[0]);
     console.log("Encabezados finales:", sheetHeaders);
+  }
+
+  // Post-procesado SOLO para MONITOREO: calcular campos derivados si vinieron vacíos o sin resultado
+  if (isMonitoreo && loadedData.length > 0) {
+    const toSeconds = (timeStr) => {
+      if (!timeStr) return 0;
+      if (typeof timeStr === 'number') {
+        // Fracción de día a segundos
+        if (timeStr >= 0 && timeStr < 1) return Math.round(timeStr * 24 * 60 * 60);
+        return Math.round(timeStr * 60 * 60); // Interpretar como horas
+      }
+      if (timeStr instanceof Date) {
+        return timeStr.getUTCHours() * 3600 + timeStr.getUTCMinutes() * 60 + timeStr.getUTCSeconds();
+      }
+      const s = String(timeStr).trim();
+      // HH:MM:SS o H:MM:SS
+      const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*[AP]M)?/i);
+      if (m) {
+        const h = parseInt(m[1] || '0', 10);
+        const mi = parseInt(m[2] || '0', 10);
+        const se = parseInt(m[3] || '0', 10);
+        return h * 3600 + mi * 60 + se;
+      }
+      return 0;
+    };
+    const secondsToHMS = (totalSeconds) => {
+      if (!totalSeconds || totalSeconds <= 0) return '00:00:00';
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    };
+    const minutesFrom = (val) => Math.round(toSeconds(val) / 60);
+
+    loadedData.forEach((row) => {
+      // Calcular TIEMPO EFECTIVO DICTADO si está vacío
+      const finClase = row['FINALIZA LA CLASE (ZOOM)'];
+      const tiempoEspera = row['TIEMPO DE ESPERA ANTES DE INICIAR LA CLASE'];
+      const tieneTiempoEfectivo = row['TIEMPO EFECTIVO DICTADO'] && String(row['TIEMPO EFECTIVO DICTADO']).trim() !== '';
+      if (!tieneTiempoEfectivo && finClase && tiempoEspera) {
+        const finSegs = toSeconds(finClase);
+        const esperaSegs = toSeconds(tiempoEspera);
+        const toleranciaSegs = 10 * 60; // 10 minutos
+        const ajuste = Math.max(esperaSegs - toleranciaSegs, 0);
+        const efectivo = Math.max(finSegs - ajuste, 0);
+        if (efectivo > 0) row['TIEMPO EFECTIVO DICTADO'] = secondsToHMS(efectivo);
+      }
+
+      // Calcular EFICIENCIA si está vacía y hay datos suficientes
+      const tieneEficiencia = row['EFICIENCIA'] && String(row['EFICIENCIA']).trim() !== '';
+      const horasProgramadas = row['HORAS PROGRAMADAS'];
+      const tiempoEfectivo = row['TIEMPO EFECTIVO DICTADO'];
+      if (!tieneEficiencia && horasProgramadas && tiempoEfectivo) {
+        const hpMin = minutesFrom(horasProgramadas);
+        const teMin = minutesFrom(tiempoEfectivo);
+        if (hpMin > 0) {
+          const pct = Math.round((teMin / hpMin) * 100);
+          row['EFICIENCIA'] = `${pct}%`;
+        }
+      }
+    });
   }
 
   return { data: loadedData, headers: sheetHeaders };
@@ -2026,10 +2208,24 @@ if (mapaSesiones.has(sesion)) {
       const newData = data.filter((_, i) => i !== realIndex);
       setData(newData);
     } else {
-      const newData = data.filter((_, i) => i !== index);
-      setData(newData);
+    // Mapear índice visible a índice real cuando MONITOREO reordena filas por DOCENTE
+    let realIndex = index;
+    if (isMonitoreoView) {
+    const groups = new Map();
+    data.forEach((r, idx) => {
+    const key = (r.DOCENTE ?? '').toString();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ r, idx });
+    });
+    const flat = [];
+    groups.forEach(list => list.forEach(item => flat.push(item)));
+    realIndex = flat[index]?.idx ?? index;
     }
-  };
+    
+    const newData = data.filter((_, i) => i !== realIndex);
+    setData(newData);
+    }
+    };
 
   // Función para calcular TIEMPO EFECTIVO DICTADO
 // Fórmula: =MAX(L3-MAX(K3-$N$1;0);0)
@@ -2207,15 +2403,29 @@ const calcularEficiencia = (row) => {
     
     setData(newData);
   } else {
+    // Mapear índice visible a índice real cuando MONITOREO reordena filas por DOCENTE
+    let realIndex = rowIndex;
+    if (isMonitoreoView) {
+      const groups = new Map();
+      data.forEach((r, idx) => {
+        const key = (r.DOCENTE ?? '').toString();
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push({ r, idx });
+      });
+      const flat = [];
+      groups.forEach(list => list.forEach(item => flat.push(item)));
+      realIndex = flat[rowIndex]?.idx ?? rowIndex;
+    }
+
     const newData = [...data];
-    newData[rowIndex][columnName] = value;
+    newData[realIndex][columnName] = value;
     
     // Calcular TIEMPO EFECTIVO DICTADO automáticamente
     if (columnName === 'FINALIZA LA CLASE (ZOOM)' || 
         columnName === 'TIEMPO DE ESPERA ANTES DE INICIAR LA CLASE') {
-      const tiempoEfectivo = calcularTiempoEfectivo(newData[rowIndex]);
+      const tiempoEfectivo = calcularTiempoEfectivo(newData[realIndex]);
       if (tiempoEfectivo !== null) {
-        newData[rowIndex]['TIEMPO EFECTIVO DICTADO'] = tiempoEfectivo;
+        newData[realIndex]['TIEMPO EFECTIVO DICTADO'] = tiempoEfectivo;
       }
     }
     
@@ -2223,9 +2433,9 @@ const calcularEficiencia = (row) => {
     if (columnName === 'FINALIZA LA CLASE (ZOOM)' || 
         columnName === 'TIEMPO DE ESPERA ANTES DE INICIAR LA CLASE' ||
         columnName === 'HORAS PROGRAMADAS') {
-      const eficiencia = calcularEficiencia(newData[rowIndex]);
+      const eficiencia = calcularEficiencia(newData[realIndex]);
       if (eficiencia !== null) {
-        newData[rowIndex]['EFICIENCIA'] = eficiencia;
+        newData[realIndex]['EFICIENCIA'] = eficiencia;
       }
     }
     
@@ -2503,6 +2713,21 @@ const uniquePeriodos = useMemo(() => {
   return Array.from(periodos).sort();
 }, [data]);
 
+// Opciones dinámicas para DOCENTE SOLO en la hoja MONITOREO
+const selectedSheetName = (availableSheets[selectedSheet]?.name || '').toString();
+const isMonitoreoView = selectedSheetName.toLowerCase().includes('monitoreo');
+const docentesFromData = useMemo(() => {
+  const set = new Set();
+  data.forEach(row => {
+    const v = row && row.DOCENTE != null ? String(row.DOCENTE).trim() : '';
+    if (v) set.add(v);
+  });
+  return Array.from(set).sort();
+}, [data]);
+const docenteOptions = isMonitoreoView
+  ? Array.from(new Set([...docentesFromData, ...uniqueDocentes]))
+  : uniqueDocentes;
+
 const dropdownOptions = {
   MODELO: ["PROTECH XP", "TRADICIONAL"],
   MODALIDAD: ["PRESENCIAL", "VIRTUAL"],
@@ -2510,13 +2735,28 @@ const dropdownOptions = {
   SECCION: uniqueSecciones.length > 0 ? uniqueSecciones : ["A", "PEAD-a", "PEAD-b"],
   TURNO: uniqueTurnos.length > 0 ? uniqueTurnos : ["MAÑANA", "TARDE", "NOCHE"],
   DIAS: uniqueDias.length > 0 ? uniqueDias : ["LUN", "MAR", "MIE", "JUE", "VIE", "SAB"],
-  DOCENTE: uniqueDocentes,
+  DOCENTE: docenteOptions,
   "INICIO SESION 10 MINUTOS ANTES": ["SI", "NO"],
   CICLO: ["SUPER INTENSIVO", "INTENSIVO", "REGULAR"],
   PERIODO: uniquePeriodos.length > 0 ? uniquePeriodos : ["2025 2: AGO", "2025 1: ENE", "2024 2: JUL"]
 };
 
 const displayData = useMemo(() => {
+  // MONITOREO sin docente seleccionado: agrupar por DOCENTE respetando el orden original del Excel
+  if (!selectedDocente && isMonitoreoView) {
+    const groups = new Map();
+    data.forEach((row) => {
+      const docenteKey = (row.DOCENTE ?? '').toString();
+      if (!groups.has(docenteKey)) groups.set(docenteKey, []);
+      groups.get(docenteKey).push(row);
+    });
+    const ordered = [];
+    groups.forEach((rows) => {
+      ordered.push(...rows);
+    });
+    return ordered;
+  }
+
   if (!selectedDocente) return data;
 
   // Agrupar por CURSO/SECCIÓN, ordenar dentro del grupo y renumerar 1..16.
@@ -2555,7 +2795,7 @@ const displayData = useMemo(() => {
   });
 
   return out;
-}, [filteredData, selectedDocente, data]);
+}, [filteredData, selectedDocente, data, isMonitoreoView]);
 
   // ===== RENDER =====
   // ===== RENDER =====
