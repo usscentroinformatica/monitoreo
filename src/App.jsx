@@ -3,22 +3,18 @@ import ExcelJS from "exceljs";
 import ControlPanel from "./components/ControlPanel";
 import DataTable from "./components/DataTable";
 
-// Rutas a los archivos de plantilla
-const TEMPLATE_EXCEL = "/src/archivos/EJEMPLO(2).xlsx";
-const TEMPLATE_CSV = "/src/archivos/meetings_Docentes_CIS_2025_09_08_2025_09_21.csv";
+// Rutas a los archivos de plantilla (resueltas por Vite)
+import templateExcelUrl from "./archivos/EJEMPLO.xlsx?url";
+import templateCsvUrl from "./archivos/meetings_Docentes_CIS_2025_09_08_2025_09_21.csv?url";
 
 // Función para descargar archivo Excel de plantilla
-const downloadExcelTemplate = async () => {
+const downloadExcelTemplate = () => {
   try {
-    const response = await fetch(TEMPLATE_EXCEL);
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
+    a.href = templateExcelUrl; // URL generada por Vite
     a.download = 'EJEMPLO.xlsx';
     document.body.appendChild(a);
     a.click();
-    window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   } catch (error) {
     console.error('Error al descargar la plantilla Excel:', error);
@@ -26,17 +22,13 @@ const downloadExcelTemplate = async () => {
 };
 
 // Función para descargar archivo CSV de plantilla
-const downloadCSVTemplate = async () => {
+const downloadCSVTemplate = () => {
   try {
-    const response = await fetch(TEMPLATE_CSV);
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
+    a.href = templateCsvUrl; // URL generada por Vite
     a.download = 'meetings_Docentes_CIS_template.csv';
     document.body.appendChild(a);
     a.click();
-    window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   } catch (error) {
     console.error('Error al descargar la plantilla CSV:', error);
