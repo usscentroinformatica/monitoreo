@@ -4,16 +4,7 @@ import * as XLSX from 'xlsx';
 // Panel de control para carga de archivos, filtros y exportación.
 // Recibe callbacks para cargar Excel/CSV, cambiar hoja y exportar; además muestra el conteo filtrado.
 function ControlPanel({
-  selectedDocente,
-  setSelectedDocente,
-  numFilas,
-  setNumFilas,
-  uniqueDocentes,
-  onCreateRows,
-  onCreateRowsForAll,
   onExport,
-  onLoadExcel,
-  onLoadZoomCsv,
   onAutocompletarConZoom, // Nueva prop
   isLoading,
   displayDataLength,
@@ -102,7 +93,7 @@ function ControlPanel({
     ws['!cols'] = colWidths;
 
     const wb = XLSX.utils.book_new();
-    const sheetName = selectedDocente ? `Sesiones_${selectedDocente.replace(/\s+/g, '_')}` : 'Monitoreo_USS';
+    const sheetName = 'Monitoreo_USS';
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
     const today = new Date();
@@ -121,34 +112,6 @@ function ControlPanel({
         </div>
         
         <div className="flex gap-3">
-          <label className="bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-4 rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105 flex items-center gap-2 cursor-pointer text-sm">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
-            {isLoading ? "Cargando..." : "Cargar Excel"}
-            <input
-              type="file"
-              accept=".xlsx, .xls"
-              onChange={onLoadExcel}
-              className="hidden"
-              disabled={isLoading}
-            />
-          </label>
-
-          <label className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105 flex items-center gap-2 cursor-pointer text-sm">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            {isLoading ? "Procesando..." : "Cargar CSV Zoom"}
-            <input
-              type="file"
-              accept=".csv"
-              onChange={onLoadZoomCsv}
-              className="hidden"
-              disabled={isLoading}
-            />
-          </label>
-          
           <button
             onClick={handleExport}
             disabled={isLoading || displayDataLength === 0}
@@ -168,10 +131,7 @@ function ControlPanel({
             {availableSheets.map((sheet) => (
               <button
                 key={sheet.index}
-                onClick={() => {
-                  onSheetChange(sheet.index);
-                  setSelectedDocente("");
-                }}
+                onClick={() => onSheetChange(sheet.index)}
                 className={`px-4 py-2 rounded-lg font-semibold transition-all whitespace-nowrap text-sm ${
                   selectedSheet === sheet.index
                     ? 'bg-blue-600 text-white shadow-lg'
@@ -186,39 +146,17 @@ function ControlPanel({
       )}
 
       <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-          <div className="flex flex-col md:flex-row gap-2 items-end">
-            <div className="flex-1 w-full md:w-auto">
-              <label className="block text-sm font-bold text-blue-900 mb-2">
-                Filtrar por Docente:
-              </label>
-              <select
-                value={selectedDocente}
-                onChange={(e) => setSelectedDocente(e.target.value)}
-                className="w-full px-4 py-2 border-2 border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-              >
-                <option value="">Todos los docentes</option>
-                {uniqueDocentes
-                  .filter(docente => docente && docente.trim() !== '')
-                  .sort((a, b) => a.localeCompare(b))
-                  .map((docente) => (
-                    <option key={docente} value={docente}>
-                      {docente}
-                    </option>
-                ))}
-              </select>
-            </div>
-            <button
-              onClick={onAutocompletarConZoom}
-              disabled={isLoading}
-              className="bg-gradient-to-r from-blue-600 to-slate-600 hover:from-blue-700 hover:to-slate-700 text-white font-bold py-2 px-4 rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm w-full md:w-auto"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              <span className="text-sm">Autocompletar</span>
-            </button>
-          </div>
+        <div className="flex justify-end">
+          <button
+            onClick={onAutocompletarConZoom}
+            disabled={isLoading}
+            className="bg-gradient-to-r from-blue-600 to-slate-600 hover:from-blue-700 hover:to-slate-700 text-white font-bold py-2 px-4 rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <span className="text-sm">Autocompletar</span>
+          </button>
         </div>
         
         <div className="mt-3">
@@ -226,12 +164,6 @@ function ControlPanel({
             Autocompletar MONITOREO (16 sesiones/curso): Crea automáticamente 16 filas por curso/docente y las autocompleta con datos de Zoom
           </p>
         </div>
-        
-        {selectedDocente && (
-          <div className="mt-3 text-sm text-blue-800 font-semibold">
-            Mostrando {displayDataLength} sesiones de {selectedDocente}
-          </div>
-        )}
       </div>
     </div>
   );
