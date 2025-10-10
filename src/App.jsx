@@ -3,18 +3,22 @@ import ExcelJS from "exceljs";
 import ControlPanel from "./components/ControlPanel";
 import DataTable from "./components/DataTable";
 
-// Rutas a los archivos de plantilla (resueltas por Vite)
-import templateExcelUrl from "./archivos/EJEMPLO.xlsx?url";
-import templateCsvUrl from "./archivos/meetings_Docentes_CIS_2025_09_08_2025_09_21.csv?url";
+// Rutas a los archivos de plantilla
+const TEMPLATE_EXCEL = "/src/archivos/EJEMPLO(2).xlsx";
+const TEMPLATE_CSV = "/src/archivos/meetings_Docentes_CIS_2025_09_08_2025_09_21.csv";
 
 // Función para descargar archivo Excel de plantilla
-const downloadExcelTemplate = () => {
+const downloadExcelTemplate = async () => {
   try {
+    const response = await fetch(TEMPLATE_EXCEL);
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = templateExcelUrl; // URL generada por Vite
+    a.href = url;
     a.download = 'EJEMPLO.xlsx';
     document.body.appendChild(a);
     a.click();
+    window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   } catch (error) {
     console.error('Error al descargar la plantilla Excel:', error);
@@ -22,13 +26,17 @@ const downloadExcelTemplate = () => {
 };
 
 // Función para descargar archivo CSV de plantilla
-const downloadCSVTemplate = () => {
+const downloadCSVTemplate = async () => {
   try {
+    const response = await fetch(TEMPLATE_CSV);
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = templateCsvUrl; // URL generada por Vite
+    a.href = url;
     a.download = 'meetings_Docentes_CIS_template.csv';
     document.body.appendChild(a);
     a.click();
+    window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   } catch (error) {
     console.error('Error al descargar la plantilla CSV:', error);
@@ -786,9 +794,10 @@ function App() {
 };
 
   // ===== FUNCIÓN PRINCIPAL: AUTOCOMPLETAR CON ZOOM =====
-  const handleAutocompletarConZoom = async () => {
+  // ===== FUNCIÓN PRINCIPAL: AUTOCOMPLETAR CON ZOOM Y CREAR 16 SESIONES =====
+const handleAutocompletarConZoom = async () => {
   if (data.length === 0) {
-    alert("⚠️ Primero carga el archivo Excel TRADICIONAL");
+    alert("⚠️ Primero carga el archivo Excel");
     return;
   }
 
@@ -837,7 +846,6 @@ function App() {
           const horaInicioExtraida = extractTime(fechaInicio);
           const horaFinExtraida = extractTime(fechaFin);
           
-          // Autocompletar campos
           const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
           for (const col of possibleDateCols) {
             if (currentHeaders.includes(col)) {
@@ -882,10 +890,8 @@ function App() {
           console.log(`  ✓ Autocompletado: ${docente} - ${curso} - Sesión ${sesion}`);
         }
       });
-    }
-    
-    // Fallback adicional (Autocompletar): emparejar por horario usando zoomData
-    if (zoomData.length > 0) {
+
+      // Fallback por horario
       const usedZoomByStart = new Set();
       const timeToMinutes = (timeStr) => {
         if (!timeStr || typeof timeStr !== 'string') return 0;
@@ -893,13 +899,19 @@ function App() {
         s = s.replace(/a\.\s*m\.|p\.\s*m\./gi, (m) => m.toLowerCase().includes('a') ? 'AM' : 'PM');
         const m12 = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)/i);
         if (m12) {
-          let h = parseInt(m12[1]) || 0; const min = parseInt(m12[2]) || 0; const sec = parseInt(m12[3]||'0')||0; const p = m12[4].toUpperCase();
-          if (p === 'PM' && h !== 12) h += 12; if (p === 'AM' && h === 12) h = 0;
+          let h = parseInt(m12[1]) || 0;
+          const min = parseInt(m12[2]) || 0;
+          const sec = parseInt(m12[3]||'0')||0;
+          const p = m12[4].toUpperCase();
+          if (p === 'PM' && h !== 12) h += 12;
+          if (p === 'AM' && h === 12) h = 0;
           return h * 60 + min + sec / 60;
         }
         const m24 = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
         if (m24) {
-          const h = parseInt(m24[1]) || 0; const min = parseInt(m24[2]) || 0; const sec = parseInt(m24[3]||'0')||0;
+          const h = parseInt(m24[1]) || 0;
+          const min = parseInt(m24[2]) || 0;
+          const sec = parseInt(m24[3]||'0')||0;
           return h * 60 + min + sec / 60;
         }
         return 0;
@@ -910,7 +922,6 @@ function App() {
         const horaProg = row['HORA INICIO'] || row['Hora Inicio'] || row['INICIO'] || row['inicio'] || '';
         if (!docente || !horaProg) return;
 
-        // Detectar si faltan fecha/hora reales
         const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
         const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
         const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
@@ -922,7 +933,11 @@ function App() {
         const tProg = timeToMinutes(String(horaProg));
         if (tProg === 0) return;
 
-        let bestZoom = null; let bestStartStr = null; let bestEndStr = null; let bestDiff = Infinity;
+        let bestZoom = null;
+        let bestStartStr = null;
+        let bestEndStr = null;
+        let bestDiff = Infinity;
+        
         zoomData.forEach(zoomRow => {
           const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || '';
           if (!matchDocente(docente, zoomDocente)) return;
@@ -933,7 +948,10 @@ function App() {
           if (tz === 0) return;
           const diff = Math.abs(tz - tProg);
           if (diff < bestDiff && diff <= 120) {
-            bestDiff = diff; bestZoom = zoomRow; bestStartStr = startStr; bestEndStr = endStr;
+            bestDiff = diff;
+            bestZoom = zoomRow;
+            bestStartStr = startStr;
+            bestEndStr = endStr;
           }
         });
 
@@ -941,16 +959,19 @@ function App() {
           const fechaInicio = bestStartStr || '';
           const fechaFin = bestEndStr || '';
 
-          // Completar campos reales
           const setIfHasHeader = (obj, colNames, val) => {
-            for (const c of colNames) { if (currentHeaders.includes(c)) { obj[c] = val; break; } }
+            for (const c of colNames) {
+              if (currentHeaders.includes(c)) {
+                obj[c] = val;
+                break;
+              }
+            }
           };
 
           setIfHasHeader(row, possibleDateCols, extractDate(fechaInicio));
           setIfHasHeader(row, possibleStartCols, extractTime(fechaInicio));
           setIfHasHeader(row, possibleEndCols, extractTime(fechaFin));
 
-          // Turno y 10 minutos antes
           row.TURNO = row.TURNO && String(row.TURNO).trim() !== '' ? row.TURNO : detectTurno(fechaInicio);
           row['INICIO SESION 10 MINUTOS ANTES'] = verificarInicio10MinutesAntes(extractTime(fechaInicio), row['HORA INICIO'] || '');
 
@@ -959,167 +980,219 @@ function App() {
       });
     }
 
-    // PASO 2: Detectar docentes/cursos únicos
-    console.log("\n📋 PASO 2: Detectando docentes y cursos");
+    // PASO 2: Detectar grupos únicos por DOCENTE+CURSO+SECCIÓN
+    console.log("\n📋 PASO 2: Detectando grupos únicos por DOCENTE+CURSO+SECCIÓN");
     
-    const docentesCursosMap = new Map();
+    const gruposPorSeccion = new Map();
     
-    dataProcesada.forEach(row => {
-      const docente = row.DOCENTE;
-      const curso = row.CURSO;
-      const seccion = row.SECCION;
+    dataProcesada.forEach((row, originalIndex) => {
+      const docente = row.DOCENTE || '';
+      const curso = row.CURSO || '';
+      const seccion = normalizeSeccion(row.SECCION || row['SECCIÓN'] || '');
       
       if (!docente || !curso || !seccion) return;
       
-      const key = `${docente}|||${curso}|||${seccion}`;
+      const key = `${docente}|||${normalizeCursoName(curso)}|||${seccion}`;
       
-      if (!docentesCursosMap.has(key)) {
-        docentesCursosMap.set(key, {
+      if (!gruposPorSeccion.has(key)) {
+        gruposPorSeccion.set(key, {
           docente,
           curso,
-          seccion,
-          periodo: row.PERIODO || "",
-          sesionesExistentes: []
+          seccion: row.SECCION || row['SECCIÓN'], // Mantener formato original
+          primeraFila: row,
+          indices: [],
+          filas: [],
+          sesionesExistentes: new Set()
         });
       }
       
-      // Guardar las sesiones que ya tienen datos autocompletados
+      const grupo = gruposPorSeccion.get(key);
+      grupo.indices.push(originalIndex);
+      grupo.filas.push(row);
+      
       if (row.SESION) {
-        docentesCursosMap.get(key).sesionesExistentes.push({
-          sesion: parseInt(row.SESION),
-          datos: row
-        });
+        grupo.sesionesExistentes.add(parseInt(row.SESION));
       }
     });
 
-    // Extender con docentes del combo para asegurar generación aunque no exista Zoom
-    if (Array.isArray(uniqueDocentes) && uniqueDocentes.length > 0) {
-      uniqueDocentes.forEach(docName => {
-        const rowsDoc = dataProcesada.filter(r => r.DOCENTE === docName);
-        if (rowsDoc.length === 0) return; // sin base en Excel, no se generan combos
-        rowsDoc.forEach(r => {
-          const curso = r.CURSO;
-          const seccion = r.SECCION || r['SECCIÓN'];
-          if (!curso || String(curso).trim() === '' || !seccion || String(seccion).trim() === '') return;
-          const key = `${docName}|||${curso}|||${seccion}`;
-          if (!docentesCursosMap.has(key)) {
-            docentesCursosMap.set(key, {
-              docente: docName,
-              curso,
-              seccion,
-              periodo: r.PERIODO || "",
-              sesionesExistentes: []
-            });
-          }
-        });
-      });
-    }
+    console.log(`Total grupos detectados: ${gruposPorSeccion.size}`);
 
-    console.log(`Total combinaciones encontradas: ${docentesCursosMap.size}`);
-    
-    // PASO 3: Crear 16 sesiones por cada curso
-    console.log("\n📋 PASO 3: Creando 16 sesiones por cada curso/docente");
-    
-    const nuevasFilas = [];
-    let totalCreadas = 0;
-    let totalConDatos = 0;
+    // PASO 3: Crear 16 sesiones por cada grupo
+console.log("\n📋 PASO 3: Creando 16 sesiones por cada grupo");
 
-    docentesCursosMap.forEach(({ docente, curso, seccion, periodo, sesionesExistentes }) => {
-      console.log(`\n--- ${docente} - ${curso} - ${seccion} ---`);
-      
-      // Crear un mapa de sesiones existentes para búsqueda rápida
-      const mapaSesiones = new Map();
-      sesionesExistentes.forEach(item => {
-        mapaSesiones.set(item.sesion, item.datos);
-      });
-      
-      // Fila de referencia para horario programado (prioriza sesiones existentes del mismo curso/sección)
-      const baseRefRow = (sesionesExistentes[0] && sesionesExistentes[0].datos) ||
-                         data.find(r => r.DOCENTE === docente && r.CURSO === curso && r.SECCION === seccion) ||
-                         data.find(r => r.DOCENTE === docente) || {};
-      
-      // Crear 16 sesiones (del 1 al 16)
-      for (let sesion = 1; sesion <= 16; sesion++) {
-        const nuevaFila = {};
-        
-        // Inicializar todas las columnas como vacías
-        currentHeaders.forEach(header => {
-          nuevaFila[header] = "";
-        });
-        
-        // Establecer valores básicos
-        nuevaFila.SESION = sesion;
-        nuevaFila.DOCENTE = docente;
-        nuevaFila.PERIODO = periodo;
-        nuevaFila.CURSO = curso;
-        nuevaFila.SECCION = seccion;
-        
-        // Prellenar horario programado y otros campos base desde fila de referencia
-        if (baseRefRow) {
-          if (baseRefRow['HORA INICIO']) nuevaFila['HORA INICIO'] = baseRefRow['HORA INICIO'];
-          if (baseRefRow['HORA FIN']) nuevaFila['HORA FIN'] = baseRefRow['HORA FIN'];
-          if (baseRefRow['DIAS']) nuevaFila['DIAS'] = baseRefRow['DIAS'];
-        }
-        
-        // Si esta sesión ya tiene datos autocompletados, copiarlos
-        // Si esta sesión ya tiene datos autocompletados, copiarlos
-if (mapaSesiones.has(sesion)) {
-  const datosExistentes = mapaSesiones.get(sesion);
+const resultadoFinal = [];
+const gruposOrdenados = Array.from(gruposPorSeccion.entries())
+  .sort((a, b) => Math.min(...a[1].indices) - Math.min(...b[1].indices));
+
+gruposOrdenados.forEach(([key, grupo]) => {
+  const { docente, curso, seccion, primeraFila, filas, sesionesExistentes } = grupo;
   
-  // Copiar solo los campos que fueron autocompletados desde Zoom
-  const camposAutocompletables = [
-    'Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia',
-    'inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO',
-    'fin', 'FIN', 'Hora Fin', 'HORA FIN',
-    'TURNO', // ⭐ Solo copiar si viene de Zoom
-    'INICIO SESION 10 MINUTOS ANTES',
-    'FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)'
-  ];
+  console.log(`\n--- ${docente} - ${curso} - ${seccion} ---`);
+  console.log(`   Sesiones existentes: ${Array.from(sesionesExistentes).sort((a,b) => a-b).join(', ')}`);
+  console.log(`   Total filas existentes: ${filas.length}`);
   
-  camposAutocompletables.forEach(campo => {
-    if (currentHeaders.includes(campo) && datosExistentes[campo]) {
-      nuevaFila[campo] = datosExistentes[campo];
-    }
+  // **CLAVE**: Crear un mapa completo de las 16 sesiones
+  const sesionesCompletas = [];
+  
+  for (let sesion = 1; sesion <= 16; sesion++) {
+    // Buscar si ya existe esta sesión
+    const filaExistente = filas.find(f => parseInt(f.SESION) === sesion);
+    
+    if (filaExistente) {
+      // Si existe, usarla tal cual
+      sesionesCompletas.push(filaExistente);
+      console.log(`  ○ Sesión ${sesion}: YA EXISTE (mantenida)`);
+    } else {
+      // Si no existe, crear una nueva
+      // Si no existe, crear una nueva
+const nuevaFila = {};
+
+// Copiar estructura de la primera fila
+currentHeaders.forEach(header => {
+  nuevaFila[header] = "";
+});
+
+// Establecer valores básicos copiando de la primera fila del grupo
+nuevaFila.SESION = sesion;
+nuevaFila.DOCENTE = primeraFila.DOCENTE;
+nuevaFila.PERIODO = primeraFila.PERIODO;
+nuevaFila.CURSO = primeraFila.CURSO;
+nuevaFila.SECCION = seccion;
+nuevaFila.DIAS = primeraFila.DIAS;
+nuevaFila['HORA INICIO'] = primeraFila['HORA INICIO'];
+nuevaFila['HORA FIN'] = primeraFila['HORA FIN'];
+nuevaFila.TURNO = primeraFila.TURNO || ""; // ⭐ Copiar TURNO del Excel
+nuevaFila.MODELO = primeraFila.MODELO || "PROTECH XP";
+nuevaFila.MODALIDAD = primeraFila.MODALIDAD || "VIRTUAL";
+nuevaFila['AULA USS'] = primeraFila['AULA USS'] || "";
+
+// Buscar datos de Zoom para esta sesión específica
+if (zoomData.length > 0) {
+  const sesionZoom = zoomData.find(zoomRow => {
+    const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
+    const zoomTema = zoomRow['Tema'] || zoomRow['Topic'] || "";
+    
+    if (!matchDocente(docente, zoomDocente)) return false;
+    
+    const temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
+    if (!temaMatch) return false;
+    
+    const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatch;
+    const cursoZoom = cursoParte.trim();
+    const sesionZoomNum = sesionNumeroStr ? parseInt(sesionNumeroStr) : 0;
+    
+    return normalizeCursoName(cursoZoom) === normalizeCursoName(curso) &&
+           normalizeSeccion(seccionZoom) === normalizeSeccion(seccion) &&
+           sesionZoomNum === sesion;
   });
   
-  totalConDatos++;
-  console.log(`  ✓ Sesión ${sesion}: CON DATOS`);
+  if (sesionZoom) {
+    const fechaInicio = sesionZoom['Hora de inicio'] || sesionZoom['Start Time'] || "";
+    const fechaFin = sesionZoom['Hora de finalización'] || sesionZoom['End Time'] || "";
+    
+    const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
+    for (const col of possibleDateCols) {
+      if (currentHeaders.includes(col)) {
+        nuevaFila[col] = extractDate(fechaInicio);
+        break;
+      }
+    }
+    
+    const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
+    for (const col of possibleStartCols) {
+      if (currentHeaders.includes(col)) {
+        nuevaFila[col] = extractTime(fechaInicio);
+        break;
+      }
+    }
+    
+    const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
+    for (const col of possibleEndCols) {
+      if (currentHeaders.includes(col)) {
+        nuevaFila[col] = extractTime(fechaFin);
+        break;
+      }
+    }
+    
+    const possibleFinalizaCols = ['FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)'];
+    for (const col of possibleFinalizaCols) {
+      if (currentHeaders.includes(col)) {
+        nuevaFila[col] = extractTime(fechaFin);
+        break;
+      }
+    }
+    
+    // ⭐ SOLO actualizar TURNO si viene de Zoom Y el campo estaba vacío
+    const turnoDetectado = detectTurno(fechaInicio);
+    if (turnoDetectado && (!nuevaFila.TURNO || nuevaFila.TURNO.trim() === '')) {
+      nuevaFila.TURNO = turnoDetectado;
+    }
+    
+    nuevaFila['INICIO SESION 10 MINUTOS ANTES'] = verificarInicio10MinutesAntes(
+      extractTime(fechaInicio),
+      nuevaFila['HORA INICIO']
+    );
+    
+    console.log(`  ✓ Sesión ${sesion}: CREADA CON DATOS ZOOM`);
+  } else {
+    console.log(`  + Sesión ${sesion}: CREADA VACÍA`);
+  }
 } else {
-  console.log(`  ○ Sesión ${sesion}: VACÍA`);
+  console.log(`  + Sesión ${sesion}: CREADA VACÍA`);
 }
-        
-        nuevasFilas.push(nuevaFila);
-        totalCreadas++;
-      }
-    });
 
-    // PASO 4: Fusionar 16 sesiones con datos existentes (no borrar)
-    const mergedDataFinal = [...data];
-    const normalizeSeccionLocal = (v) => (v ? String(v).toUpperCase().trim().replace(/^PEAD[-_ ]?/i, '').replace(/[^A-Z0-9]/g, '') : '');
-    nuevasFilas.forEach(nfila => {
-      const idx = mergedDataFinal.findIndex(r =>
-        (r.DOCENTE || '') === (nfila.DOCENTE || '') &&
-        (normalizeCursoName(r.CURSO || '') === normalizeCursoName(nfila.CURSO || '')) &&
-        (normalizeSeccionLocal(r.SECCION || r['SECCIÓN'] || '') === normalizeSeccionLocal(nfila.SECCION || nfila['SECCIÓN'] || '')) &&
-        (parseInt(r.SESION || 0) === parseInt(nfila.SESION || 0))
-      );
-      if (idx >= 0) {
-        // Completar solo campos vacíos
-        Object.keys(nfila).forEach(k => {
-          const v = mergedDataFinal[idx][k];
-          if (v === undefined || String(v).trim() === '') {
-            mergedDataFinal[idx][k] = nfila[k];
-          }
+sesionesCompletas.push(nuevaFila);
+    }
+  }
+  
+  // Agregar las 16 sesiones completas (existentes + nuevas) al resultado final
+  resultadoFinal.push(...sesionesCompletas);
+  
+  const nuevasCreadas = 16 - sesionesExistentes.size;
+  console.log(`  📊 Total: 16 sesiones (${sesionesExistentes.size} existentes + ${nuevasCreadas} nuevas)`);
+});
+
+// Agregar filas que no tienen grupo definido al final
+dataProcesada.forEach((row) => {
+  const docente = row.DOCENTE || '';
+  const curso = row.CURSO || '';
+  const seccion = normalizeSeccion(row.SECCION || row['SECCIÓN'] || '');
+  
+  if (!docente || !curso || !seccion) {
+    resultadoFinal.push(row);
+  }
+});
+
+setData(resultadoFinal);
+
+const totalGrupos = gruposPorSeccion.size;
+const totalSesionesCreadas = Array.from(gruposPorSeccion.values())
+  .reduce((sum, grupo) => sum + (16 - grupo.sesionesExistentes.size), 0);
+const totalConDatos = Array.from(gruposPorSeccion.values())
+  .reduce((sum, grupo) => {
+    let conDatos = 0;
+    for (let s = 1; s <= 16; s++) {
+      if (!grupo.sesionesExistentes.has(s)) {
+        const existeZoom = zoomData.some(z => {
+          const zd = z['Anfitrión'] || z['Host'] || "";
+          const zt = z['Tema'] || z['Topic'] || "";
+          if (!matchDocente(grupo.docente, zd)) return false;
+          const tm = zt.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
+          if (!tm) return false;
+          const [, cp, sz, sn] = tm;
+          return normalizeCursoName(cp.trim()) === normalizeCursoName(grupo.curso) &&
+                 normalizeSeccion(sz) === normalizeSeccion(grupo.seccion) &&
+                 (sn ? parseInt(sn) : 0) === s;
         });
-      } else {
-        mergedDataFinal.push(nfila);
+        if (existeZoom) conDatos++;
       }
-    });
-    setData(mergedDataFinal);
-    
-    alert(`✅ Proceso completado:\n\n${totalCreadas} sesiones generadas (16 por curso)\n${totalConDatos} sesiones con datos de Zoom\nFusionado sin borrar registros existentes`);
-    
-    console.log("=== PROCESO FINALIZADO ===");
+    }
+    return sum + conDatos;
+  }, 0);
+
+alert(`✅ Proceso completado:\n\n${totalGrupos} grupos procesados\n${totalSesionesCreadas} sesiones nuevas creadas\n${totalConDatos} sesiones con datos de Zoom\n\nCada grupo ahora tiene EXACTAMENTE 16 sesiones`);
+
+console.log("=== PROCESO FINALIZADO ===");
     
   } catch (error) {
     console.error("Error en proceso:", error);
