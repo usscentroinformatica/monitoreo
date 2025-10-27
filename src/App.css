@@ -1,0 +1,166 @@
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+/* Estilos para la barra de desplazamiento horizontal */
+.table-container::-webkit-scrollbar {
+  height: 12px; /* Altura de la barra horizontal */
+  display: block !important;
+}
+
+.table-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 6px;
+}
+
+.table-container::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 6px;
+  border: 2px solid #f1f1f1;
+}
+
+.table-container::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
+/* ===== ESTILOS PARA FECHAS Y HORAS ===== */
+
+/* Contenedor de tabla mejorado */
+.table-container {
+  max-width: 100%;
+  overflow-x: scroll;
+  border-radius: 8px;
+  /* Forzar la barra de desplazamiento horizontal */
+  overflow-y: hidden;
+  scrollbar-width: thin; /* Para Firefox */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Celdas con fechas y horas */
+table input[type="text"], table textarea, table select {
+  font-family: 'Courier New', Monaco, monospace;
+  font-size: 0.9em;
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: #fafafa;
+  transition: all 0.2s ease;
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Estilos específicos para campos de tiempo */
+table input[type="text"]:matches([value*=":"]) {
+  background-color: #f0f8ff;
+  font-weight: 500;
+  color: #2c5aa0;
+  text-align: center;
+  min-width: 60px;
+}
+
+/* Estilos para fechas */
+table input[type="text"]:matches([value*="/"]) {
+  background-color: #f5f5f0;
+  color: #5a5a00;
+  text-align: center;
+  min-width: 80px;
+}
+
+/* Hover effects */
+table input[type="text"]:hover, table textarea:hover, table select:hover {
+  border-color: #4CAF50;
+  background-color: #ffffff;
+}
+
+/* Focus effects */
+table input[type="text"]:focus, table textarea:focus, table select:focus {
+  outline: none;
+  border-color: #2196F3;
+  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+  background-color: #ffffff;
+}
+
+/* Celdas de encabezado mejoradas */
+table th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+  color: #495057;
+  padding: 12px 8px;
+  border-bottom: 2px solid #dee2e6;
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Filas alternadas */
+table tbody tr:nth-child(even) {
+  background-color: #f8f9fa;
+}
+
+table tbody tr:hover {
+  background-color: #e3f2fd;
+}
+
+/* Texto truncado para celdas largas */
+.cell-truncated {
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: help;
+}
+
+/* Indicador visual para tiempo */
+.time-cell::before {
+  content: "🕐 ";
+  font-size: 0.8em;
+  opacity: 0.6;
+}
+
+/* Indicador visual para fecha */
+.date-cell::before {
+  content: "📅 ";
+  font-size: 0.8em;
+  opacity: 0.6;
+}
