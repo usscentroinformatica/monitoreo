@@ -140,14 +140,14 @@ export const useBackupManager = (ExcelJS, mostrarToast) => {
   const [backupHistory, setBackupHistory] = useState([]);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
 
-  // Cargar backups solo cuando el modal está abierto
+  // Cargar backups desde Firebase al inicio
   useEffect(() => {
-    if (!isBackupModalOpen) return;
     const loadBackups = async () => {
       try {
         const backupsCollection = collection(db, "backups");
         const backupsQuery = query(backupsCollection, orderBy("date", "desc"), limit(20));
         const querySnapshot = await getDocs(backupsQuery);
+        
         const loadedBackups = [];
         querySnapshot.forEach((doc) => {
           loadedBackups.push({
@@ -155,16 +155,24 @@ export const useBackupManager = (ExcelJS, mostrarToast) => {
             ...doc.data()
           });
         });
+        
         setBackupHistory(loadedBackups);
       } catch (error) {
-        if (isBackupModalOpen) {
+        if (
+          error.code === 'permission-denied' ||
+          (error.message && error.message.includes('Missing or insufficient permissions'))
+        ) {
+          // Silently ignore permission errors on load
+          console.warn('No tienes permisos para cargar copias de seguridad.');
+        } else {
           console.error("Error loading backups:", error);
           mostrarToast("❌ Error al cargar copias de seguridad", "error");
         }
       }
     };
+    
     loadBackups();
-  }, [isBackupModalOpen, mostrarToast]);
+  }, [mostrarToast]);
 
   // Guardar backup en Firebase
   const saveBackup = async (data, currentHeaders, activeTab, setIsLoading) => {
