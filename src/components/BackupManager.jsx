@@ -140,14 +140,14 @@ export const useBackupManager = (ExcelJS, mostrarToast) => {
   const [backupHistory, setBackupHistory] = useState([]);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
 
-  // Cargar backups desde Firebase al inicio
+  // Cargar backups solo cuando el modal está abierto
   useEffect(() => {
+    if (!isBackupModalOpen) return;
     const loadBackups = async () => {
       try {
         const backupsCollection = collection(db, "backups");
         const backupsQuery = query(backupsCollection, orderBy("date", "desc"), limit(20));
         const querySnapshot = await getDocs(backupsQuery);
-        
         const loadedBackups = [];
         querySnapshot.forEach((doc) => {
           loadedBackups.push({
@@ -155,16 +155,16 @@ export const useBackupManager = (ExcelJS, mostrarToast) => {
             ...doc.data()
           });
         });
-        
         setBackupHistory(loadedBackups);
       } catch (error) {
-        console.error("Error loading backups:", error);
-        mostrarToast("❌ Error al cargar copias de seguridad", "error");
+        if (isBackupModalOpen) {
+          console.error("Error loading backups:", error);
+          mostrarToast("❌ Error al cargar copias de seguridad", "error");
+        }
       }
     };
-    
     loadBackups();
-  }, [mostrarToast]);
+  }, [isBackupModalOpen, mostrarToast]);
 
   // Guardar backup en Firebase
   const saveBackup = async (data, currentHeaders, activeTab, setIsLoading) => {

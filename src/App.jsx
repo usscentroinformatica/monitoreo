@@ -2142,6 +2142,26 @@ if (relevantColumns.some(col => col === columnName)) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-4">
       <div className="max-w-full mx-auto">
+        {/* DESCARGA DE ARCHIVOS PRINCIPALES */}
+        <div className="mb-6 flex gap-4 items-center">
+          <span className="font-bold text-blue-900 text-lg">Descargar archivos principales:</span>
+          <a
+            href="/EJEMPLO.xlsx"
+            download
+            className="bg-blue-900 text-white px-3 py-1 rounded-lg shadow hover:bg-blue-700 text-xs font-bold"
+            style={{ textDecoration: 'none' }}
+          >
+            Descargar Excel
+          </a>
+          <a
+            href="/meetings_Docentes_CIS_2025_09_08_2025_09_21.csv"
+            download
+            className="bg-blue-900 text-white px-3 py-1 rounded-lg shadow hover:bg-blue-700 text-xs font-bold"
+            style={{ textDecoration: 'none' }}
+          >
+            Descargar CSV
+          </a>
+        </div>
         {/* SISTEMA DE PESTAÑAS */}
         <div className="bg-white rounded-t-xl shadow-lg mb-0">
           <div className="flex items-center bg-gray-100 border-b-2 border-gray-300 overflow-x-auto">
