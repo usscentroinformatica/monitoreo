@@ -84,7 +84,6 @@ function App() {
     const updatedSheetData = { ...prevSheetData, [currentIndex]: { data: prevData, headers } };
     updateActiveTab({ currentHeaders: headers, sheetData: updatedSheetData });
   };
-
   // Función para setear TIEMPO EFECTIVO DICTADO de forma condicional
   // Función para setear TIEMPO EFECTIVO DICTADO y EFICIENCIA de forma condicional
 const setEffectiveTimeConditionally = (row) => {
@@ -98,7 +97,6 @@ const setEffectiveTimeConditionally = (row) => {
     row['EFICIENCIA'] = calculateEfficiency(row);
   }
 };
-
   // ===== FUNCIONES DE UTILIDAD =====
   const normalizeDocenteName = (name) => {
     if (!name) return "";
@@ -171,6 +169,7 @@ const setEffectiveTimeConditionally = (row) => {
 
   const extractDate = (dateTimeStr) => {
     if (!dateTimeStr) return null;
+
     const s = String(dateTimeStr).trim();
 
     const m1 = s.match(/([A-Za-zÁÉÍÓÚáéíóúñÑ]+)\s+(\d{1,2}),\s*(\d{4})/);
@@ -265,6 +264,7 @@ const setEffectiveTimeConditionally = (row) => {
 
   const detectTurno = (horaStr) => {
     if (!horaStr) return null;
+
     
     let hour = 0;
     
