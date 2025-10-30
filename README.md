@@ -1,16 +1,34 @@
-# React + Vite
+# Sistema de Monitoreo USS
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Aplicación web React + Vite para el monitoreo y gestión de sesiones educativas en la Universidad Señor de Sipán (USS).
 
-Currently, two official plugins are available:
+## Características
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Gestión de archivos Excel**: Carga y procesamiento de archivos de asistencia
+- **Integración con Zoom**: Correlación automática con reportes CSV de reuniones Zoom
+- **Sistema de pestañas**: Manejo simultáneo de múltiples archivos
+- **Autocompletado inteligente**: Creación automática de filas basada en datos de Zoom
+- **Exportación profesional**: Formato USS con estilos corporativos
 
-## React Compiler
+## Tecnologías
 
-The React Compiler is not enabled on this template. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- React 19.1.1 con Vite 7.1.7
+- ExcelJS para manipulación de archivos Excel
+- PapaParse para procesamiento de CSV
+- Tailwind CSS para estilos
+- date-fns para manejo de fechas
 
-## Expanding the ESLint configuration
+## Comandos
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+# Desarrollo
+npm run dev
+
+# Build de producción
+npm run build
+
+# Previsualizar build
+npm run preview
+
+# Lint
+npm run lint
