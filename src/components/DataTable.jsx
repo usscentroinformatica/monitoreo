@@ -1,218 +1,6 @@
 import React from "react";
 
-function DataTable({ 
-  data, 
-  headers, 
-  dropdownOptions, 
-  onCellChange, 
-  onDeleteRow 
-}) {
-  // Helper function to extract information from course title
-  const extractCourseInfo = (value) => {
-    if (!value || typeof value !== 'string') return { course: '', section: '' };
-    
-    const courseMatch = value.match(/^(.+?)–\s*(PEAD-[a-zA-Z]+)/i);
-    if (courseMatch) {
-      return {
-        course: courseMatch[1].trim(),
-        section: courseMatch[2].trim()
-      };
-    }
-    
-    const altMatch = value.match(/^(.+?)\s+(PEAD-[a-zA-Z]+)/i);
-    if (altMatch) {
-      return {
-        course: altMatch[1].trim(),
-        section: altMatch[2].trim()
-      };
-    }
-    
-    return { course: value, section: '' };
-  };
-
-  const suggestCourse = (value, rowData) => {
-    if (!value || typeof value !== 'string') return '';
-    return extractCourseInfo(value).course;
-  };
-
-  const suggestSection = (value, rowData) => {
-    if (!value || typeof value !== 'string') return '';
-    return extractCourseInfo(value).section;
-  };
-
-
-const ensureString = (value) => {
-  if (value === null || value === undefined) {
-    return "";
-  }
-  
-  // CASO ESPECIAL: Si es un string que parece ser toString() de un Date (contiene GMT)
-  if (typeof value === "string" && value.includes("GMT")) {
-    try {
-      const dateObj = new Date(value);
-      if (!isNaN(dateObj.getTime())) {
-        const year = dateObj.getUTCFullYear();
-        const hours = dateObj.getUTCHours();
-        const minutes = dateObj.getUTCMinutes();
-        const seconds = dateObj.getUTCSeconds();
-        
-        if (year === 1899 || year === 1900) {
-          return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-        }
-        
-        if (hours !== 0 || minutes !== 0 || seconds !== 0) {
-          return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-        }
-      }
-    } catch (e) {
-      // Si falla, continuar con el resto del código
-    }
-  }
-  
-  // INTERCEPTAR OBJETOS DATE PRIMERO
-  if (value instanceof Date) {
-    const year = value.getUTCFullYear();
-    const hours = value.getUTCHours();
-    const minutes = value.getUTCMinutes();
-    const seconds = value.getUTCSeconds();
-    
-    if (year === 1899 || year === 1900) {
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }
-    
-    if (hours !== 0 || minutes !== 0 || seconds !== 0) {
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }
-    
-    return value.toLocaleDateString('es-ES', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-  }
-  
-  // Si ya es un string
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    
-    // Si parece ser una hora (HH:MM:SS), devolverla sin modificar
-    if (/^\d{1,2}:\d{2}:\d{2}$/.test(trimmed)) {
-      return trimmed;
-    }
-    
-    // Si es muy largo, truncar
-    if (trimmed.length > 100) {
-      return trimmed.substring(0, 97) + '...';
-    }
-    
-    return trimmed;
-  }
-  
-  if (typeof value === "number") {
-    // Caso especial: si es 0, devolverlo como "0"
-    if (value === 0) {
-      return "0";
-    }
-    
-    // Verificar si es una fracción que representa tiempo (0-1)
-    if (value > 0 && value < 1) {
-      const totalSeconds = Math.round(value * 24 * 60 * 60);
-      const hours = Math.floor(totalSeconds / 3600);
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      const seconds = totalSeconds % 60;
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }
-    
-    // Verificar si es fecha de Excel (número grande)
-    if (value > 1 && value < 100000) {
-      try {
-        const excelDate = new Date((value - 25569) * 86400 * 1000);
-        if (!isNaN(excelDate.getTime()) && excelDate.getFullYear() > 1900) {
-          return excelDate.toLocaleDateString('es-ES', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric'
-          });
-        }
-      } catch (e) {
-        // Si falla, devolver como número normal
-      }
-    }
-    
-    return String(value);
-  }
-  
-  if (typeof value === "boolean") {
-    return String(value);
-  }
-  
-  if (Array.isArray(value)) {
-    return value.join(", ");
-  }
-  
-  if (typeof value === "object") {
-    // Hipervínculos
-    if (value.hyperlink !== undefined) {
-      const text = String(value.text || value.hyperlink || '').trim();
-      if (text.length > 50) {
-        return text.substring(0, 47) + '...';
-      }
-      return text;
-    }
-    
-    // Texto enriquecido
-    if (value.richText !== undefined) {
-      return value.richText.map(rt => rt.text || '').join('').trim();
-    }
-    
-    // Texto directo
-    if (value.text !== undefined) {
-      return String(value.text).trim();
-    }
-    
-    // Fórmulas
-    if (value.formula !== undefined) {
-      return String(value.result !== undefined ? value.result : value.formula).trim();
-    }
-    
-    // Valores anidados
-    if (value.value !== undefined) {
-      if (value.value instanceof Date) {
-        const hours = value.value.getUTCHours();
-        const minutes = value.value.getUTCMinutes();
-        const seconds = value.value.getUTCSeconds();
-        
-        if (hours !== 0 || minutes !== 0 || seconds !== 0) {
-          return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-        } else {
-          return value.value.toLocaleDateString('es-ES', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric'
-          });
-        }
-      }
-      return String(value.value).trim();
-    }
-    
-    // Nombres
-    if (value.name !== undefined) {
-      return String(value.name).trim();
-    }
-    
-    // Otros objetos
-    try {
-      const jsonStr = JSON.stringify(value);
-      if (jsonStr === '{}' || jsonStr === 'null') return "";
-      return jsonStr.length > 50 ? "[Datos complejos]" : jsonStr;
-    } catch (e) {
-      return "[Error en datos]";
-    }
-  }
-  
-  return String(value).trim();
-};
-
+function DataTable({ data, headers, dropdownOptions, onCellChange, onDeleteRow }) {
   // Filtrar headers vacíos y asegurar que tenemos headers válidos
   const displayHeaders = headers.filter(header => header && header.trim() !== "");
 
@@ -233,7 +21,6 @@ const ensureString = (value) => {
         );
       }
     }
-    
     return (
       <div className="bg-white rounded-xl shadow-2xl overflow-hidden p-8 text-center">
         <p className="text-gray-500 text-lg">No hay datos cargados. Por favor, carga un archivo Excel para comenzar.</p>
@@ -287,7 +74,7 @@ const ensureString = (value) => {
                   >
                     {dropdownOptions[header] ? (
                       <select
-                        value={ensureString(row[header]) || ""}
+                        value={row[header] || ""}
                         onChange={(e) => onCellChange(rowIndex, header, e.target.value)}
                         className="w-full px-2 py-1 text-center bg-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 rounded appearance-none cursor-pointer hover:bg-blue-50 transition-colors"
                         style={{ 
@@ -298,62 +85,20 @@ const ensureString = (value) => {
                           paddingRight: '24px'
                         }}
                       >
-                        <option value="">--</option>
+                        <option value="">-- Seleccionar --</option>
                         {dropdownOptions[header].map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
+                          <option key={option} value={option}>{option}</option>
                         ))}
                       </select>
-                    ) : (() => {
-                      const cellValue = ensureString(
-                        header === 'CURSO' ? suggestCourse(row[header], row) :
-                        header === 'SECCION' || header === 'SECCIÓN' ? (row[header] || suggestSection(row['TEMA'] || row['CURSO'], row)) :
-                        (row[header] !== undefined ? row[header] : "")
-                      );
-                      
-                      // Detectar si es fecha, hora o texto largo
-                      const isTime = /^\d{1,2}:\d{2}(:\d{2})?$/.test(cellValue);
-                      const isDate = /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(cellValue) || /^\d{1,2}-\d{1,2}-\d{4}$/.test(cellValue);
-                      const isLongText = cellValue.length > 50;
-                      
-                      // Determinar clases CSS y estilos
-                      let cellClass = "w-full px-2 py-1 text-center bg-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 rounded";
-                      let cellStyle = {
-                        minWidth: header.includes('AULA') || header.length > 20 ? '200px' : '100px',
-                        fontSize: header.includes('AULA') || header.length > 20 ? '10px' : '12px'
-                      };
-                      
-                      if (isLongText) {
-                        cellClass += " cell-truncated";
-                        cellStyle.maxWidth = "200px";
-                        cellStyle.whiteSpace = "nowrap";
-                        cellStyle.overflow = "hidden";
-                        cellStyle.textOverflow = "ellipsis";
-                      }
-                      
-                      return (
-                        <input
-                          type="text"
-                          value={cellValue}
-                          onChange={(e) => {
-                            const newValue = ensureString(e.target.value);
-                            if (header === 'CURSO' || header === 'TEMA') {
-                              const courseInfo = extractCourseInfo(newValue);
-                              onCellChange(rowIndex, header, ensureString(courseInfo.course));
-                              if (courseInfo.section && (headers.includes('SECCION') || headers.includes('SECCIÓN'))) {
-                                onCellChange(rowIndex, headers.includes('SECCION') ? 'SECCION' : 'SECCIÓN', ensureString(courseInfo.section));
-                              }
-                            } else {
-                              onCellChange(rowIndex, header, newValue);
-                            }
-                          }}
-                          className={cellClass}
-                          style={cellStyle}
-                          title={isLongText ? cellValue : undefined} // Tooltip para texto largo
-                        />
-                      );
-                    })()}
+                    ) : (
+                      <input
+                        type="text"
+                        value={row[header] || ""}
+                        onChange={(e) => onCellChange(rowIndex, header, e.target.value)}
+                        className="w-full px-2 py-1 text-center bg-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 rounded appearance-none hover:bg-blue-50 transition-colors"
+                        style={{ minWidth: '100px' }}
+                      />
+                    )}
                   </td>
                 ))}
               </tr>

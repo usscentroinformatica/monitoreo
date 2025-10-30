@@ -2,16 +2,17 @@ import React, { useState, useMemo } from "react";
 import ExcelJS from "exceljs";
 import ControlPanel from "./components/ControlPanel";
 import DataTable from "./components/DataTable";
-
+import { BackupHistoryModal, useBackupManager } from './components/BackupManager';
+import { initializeApp } from 'firebase/app';
+import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 function App() {
   // Sistema de pestañas
   const [tabs, setTabs] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
   const [nextTabId, setNextTabId] = useState(1);
-
   // Obtener la pestaña activa
   const activeTab = tabs.find(tab => tab.id === activeTabId);
-
   // Estados de la pestaña activa (si existe)
   const data = activeTab?.data || [];
   const zoomData = activeTab?.zoomData || [];
@@ -20,17 +21,104 @@ function App() {
   const selectedSheet = activeTab?.selectedSheet || 0;
   const workbookData = activeTab?.workbookData || null;
   const currentHeaders = activeTab?.currentHeaders || [];
+  const [randomDocente, setRandomDocente] = useState(null);
+
+  const mostrarToast = (mensaje, tipo = 'info') => {
+  // Crear elemento toast
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${tipo}`;
+  
+  // Posición superior derecha y estilos mejorados
+  toast.style.position = 'fixed';
+  toast.style.top = '20px';
+  toast.style.right = '20px';
+  toast.style.backgroundColor = tipo === 'error' ? '#f44336' : tipo === 'warning' ? '#ff9800' : '#4CAF50';
+  toast.style.color = 'white';
+  toast.style.padding = '12px 15px';
+  toast.style.borderRadius = '5px';
+  toast.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+  toast.style.zIndex = '10000';
+  toast.style.maxWidth = '350px';
+  toast.style.fontSize = '14px';
+  toast.style.fontWeight = 'bold';
+  
+  // Agregar al body
+  document.body.appendChild(toast);
+  
+  // Contenido HTML para mejor formateo
+  toast.innerHTML = mensaje;
+  
+  // Remover después de 10 segundos
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.5s';
+    
+    setTimeout(() => {
+      if (document.body.contains(toast)) {
+        document.body.removeChild(toast);
+      }
+    }, 500);
+  }, 10000);  // 10 segundos
+  
+  // Sistema de apilamiento para múltiples notificaciones
+  const toasts = document.querySelectorAll('.toast');
+  if (toasts.length > 1) {
+    const offset = Array.from(toasts).slice(0, -1).reduce((total, t) => {
+      return total + t.offsetHeight + 10;
+    }, 0);
+    toast.style.top = `${20 + offset}px`;
+  }
+};
+
+  // Usa el hook personalizado para manejar backups
+const {
+  backupHistory,
+  isBackupModalOpen,
+  setIsBackupModalOpen,
+  saveBackup: saveBackupToStorage,
+  downloadBackup,
+  deleteBackup
+} = useBackupManager(ExcelJS, mostrarToast);
+
+// Función wrapper para saveBackup
+const saveBackup = () => {
+  saveBackupToStorage(data, currentHeaders, activeTab, setIsLoading);
+};
+
 
   // Función para actualizar la pestaña activa
   const updateActiveTab = (updates) => {
-    setTabs(prevTabs => 
-      prevTabs.map(tab => 
-        tab.id === activeTabId 
+    setTabs(prevTabs =>
+      prevTabs.map(tab =>
+        tab.id === activeTabId
           ? { ...tab, ...updates }
           : tab
       )
     );
   };
+
+
+const selectRandomDocente = () => {
+  // Obtener lista de docentes únicos
+  const uniqueDocentes = [...new Set(data
+    .map(row => row.DOCENTE)
+    .filter(docente => docente && docente.trim() !== '')
+  )];
+  
+  if (uniqueDocentes.length === 0) {
+    mostrarToast('❌ No hay docentes para seleccionar', 'error');
+    return;
+  }
+  
+  // Seleccionar un docente aleatorio
+  const randomIndex = Math.floor(Math.random() * uniqueDocentes.length);
+  const selectedDocente = uniqueDocentes[randomIndex];
+  
+  // Establecer el docente aleatorio
+  setRandomDocente(selectedDocente);
+  
+  mostrarToast(`🎲 Docente seleccionado: <br><b>${selectedDocente}</b>`, 'success');
+};
 
   // Función para crear nueva pestaña
   const createNewTab = (fileName, initialData = {}) => {
@@ -47,25 +135,22 @@ function App() {
       // Caché por hoja
       sheetData: initialData.sheetData || { 0: { data: initialData.data || [], headers: initialData.currentHeaders || [] } }
     };
-    
+   
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(nextTabId);
     setNextTabId(prev => prev + 1);
   };
-
   // Función para cerrar pestaña
   const closeTab = (tabId) => {
     const confirmClose = window.confirm("¿Estás seguro de cerrar esta pestaña? Los cambios no guardados se perderán.");
     if (!confirmClose) return;
-
     const newTabs = tabs.filter(tab => tab.id !== tabId);
     setTabs(newTabs);
-    
+   
     if (activeTabId === tabId) {
       setActiveTabId(newTabs.length > 0 ? newTabs[0].id : null);
     }
   };
-
   // Wrappers para los setters
   const setData = (newData) => {
     const currentIndex = activeTab?.selectedSheet ?? 0;
@@ -84,7 +169,6 @@ function App() {
     const updatedSheetData = { ...prevSheetData, [currentIndex]: { data: prevData, headers } };
     updateActiveTab({ currentHeaders: headers, sheetData: updatedSheetData });
   };
-
   // ===== FUNCIONES DE UTILIDAD =====
   const normalizeDocenteName = (name) => {
     if (!name) return "";
@@ -96,12 +180,11 @@ function App() {
       .sort()
       .join(" ");
   };
-
   const normalizeCursoName = (name) => {
     if (!name) return "";
-    
+   
     let normalized = convertRomanToArabic(name);
-    
+   
     return normalized
       .toUpperCase()
       .trim()
@@ -113,52 +196,74 @@ function App() {
       .filter(word => word.length > 1)
       .join(" ");
   };
-
   const convertRomanToArabic = (text) => {
     if (!text) return text;
-    
+   
     const romanToArabic = {
       'II': '2',
       'III': '3',
       'IV': '4',
       'V': '5'
     };
-    
+   
     let result = text;
     Object.keys(romanToArabic).forEach(roman => {
       const regex = new RegExp(`\\b${roman}\\b`, 'gi');
       result = result.replace(regex, romanToArabic[roman]);
     });
-    
+   
     return result;
   };
-
   const normalizeSeccion = (value) => {
-    if (!value) return "";
-    return String(value)
-      .toUpperCase()
-      .trim()
-      .replace(/^PEAD[-_ ]?/, "")
-      .replace(/[^A-Z0-9]/g, "");
-  };
+  if (!value) return "";
+  
+  let normalized = String(value)
+    .toUpperCase()
+    .trim()
+    .replace(/^PEAD[-_ ]?/, ""); // Elimina "PEAD-" al inicio
+  
+  // Elimina caracteres que no sean alfanuméricos
+  normalized = normalized.replace(/[^A-Z0-9]/g, "");
+  
+  return normalized;
+};
+
+const matchSecciones = (seccionExcel, seccionZoom) => {
+  const normalizedExcel = normalizeSeccion(seccionExcel);
+  const normalizedZoom = normalizeSeccion(seccionZoom);
+  
+  // Coincidencia exacta
+  if (normalizedExcel === normalizedZoom) return true;
+  
+  // Comprobar si uno está contenido en el otro (para casos como "A" vs "AA")
+  if (normalizedExcel.includes(normalizedZoom) || normalizedZoom.includes(normalizedExcel)) {
+    // Mostrar mensaje más claro sobre la discrepancia
+    mostrarToast(`⚠️ Diferencia en secciones:<br>
+      <b>Docente:</b> ${seccionExcel.includes('PEAD') ? seccionExcel.split('-')[0] : 'DOCENTE'}<br>
+      <b>Secciones en Excel:</b> ${seccionExcel}<br>
+      <b>Sección en Zoom:</b> ${seccionZoom}`, 'warning');
+    console.log(`⚠️ Discrepancia detectada: Excel "${seccionExcel}" vs Zoom "${seccionZoom}"`);
+    return true;
+  }
+  
+  return false;
+};
 
   const matchDocente = (docenteExcel, docenteZoom) => {
     const normalizedExcel = normalizeDocenteName(docenteExcel);
     const normalizedZoom = normalizeDocenteName(docenteZoom);
-    
+   
     if (normalizedExcel === normalizedZoom) return true;
-    
+   
     const wordsExcel = normalizedExcel.split(" ");
     const wordsZoom = normalizedZoom.split(" ");
     const commonWords = wordsExcel.filter(word => wordsZoom.includes(word));
-    
+   
     return commonWords.length >= 2;
   };
-
   const extractDate = (dateTimeStr) => {
     if (!dateTimeStr) return "";
     const s = String(dateTimeStr).trim();
-
     const m1 = s.match(/([A-Za-zÁÉÍÓÚáéíóúñÑ]+)\s+(\d{1,2}),\s*(\d{4})/);
     if (m1) {
       const monthMap = {
@@ -174,13 +279,11 @@ function App() {
         return `${d}/${mm}/${y}`;
       }
     }
-
     const m2 = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
     if (m2) {
       const y = m2[1], m = String(m2[2]).padStart(2,'0'), d = String(m2[3]).padStart(2,'0');
       return `${d}/${m}/${y}`;
     }
-
     const m3 = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
     if (m3) {
       let a = parseInt(m3[1],10), b = parseInt(m3[2],10); let y = m3[3];
@@ -195,7 +298,6 @@ function App() {
       const dd = String(a).padStart(2,'0'); const mm = String(b).padStart(2,'0');
       y = y.length === 2 ? `20${y}`: y; return `${dd}/${mm}/${y}`;
     }
-
     const d = new Date(s);
     if (!isNaN(d.getTime())) {
       const dd = String(d.getDate()).padStart(2,'0');
@@ -205,32 +307,44 @@ function App() {
     }
     return s;
   };
-
   const extractTime = (dateTimeStr) => {
     if (!dateTimeStr) return "";
-    
+   
     let match = dateTimeStr.match(/(\d{1,2}:\d{2}:\d{2}\s*[AP]M)/i);
     if (match) return match[1];
-    
+   
     match = dateTimeStr.match(/(\d{1,2}:\d{2}:\d{2}\s*[ap]\.\s*m\.)/i);
     if (match) return match[1];
-    
+   
     match = dateTimeStr.match(/^(\d{1,2}:\d{2}:\d{2})/);
     if (match) return match[1];
-    
+   
     return dateTimeStr;
   };
-
+  const extractDuration = (zoomRow) => {
+    if (!zoomRow) return "";
+    let durStr = zoomRow['Duración'] || zoomRow['Duration'] || zoomRow['Duration (Minutes)'] || "";
+    if (!durStr) return "";
+    let minutes = parseInt(durStr);
+    if (isNaN(minutes)) {
+      // Si ya es un string de tiempo como "01:00:00", retornar tal cual
+      return String(durStr).trim();
+    }
+    // Convertir minutos a HH:MM:00
+    let hours = Math.floor(minutes / 60);
+    let mins = minutes % 60;
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:00`;
+  };
   const detectTurno = (horaStr) => {
     if (!horaStr) return "";
-    
+   
     let hour = 0;
-    
+   
     const match12h = horaStr.match(/(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)/i);
     if (match12h) {
       hour = parseInt(match12h[1]);
       const period = match12h[4].toUpperCase();
-      
+     
       if (period === 'PM' && hour !== 12) {
         hour += 12;
       } else if (period === 'AM' && hour === 12) {
@@ -241,7 +355,7 @@ function App() {
       if (matchPeriod) {
         hour = parseInt(matchPeriod[1]);
         const period = matchPeriod[4].toLowerCase();
-        
+       
         if (period === 'p' && hour !== 12) {
           hour += 12;
         } else if (period === 'a' && hour === 12) {
@@ -254,7 +368,7 @@ function App() {
         }
       }
     }
-    
+   
     if (hour >= 6 && hour < 12) {
       return "MAÑANA";
     } else if (hour >= 12 && hour < 18) {
@@ -265,505 +379,622 @@ function App() {
       return "NOCHE";
     }
   };
-
   const extractCursoFromTema = (tema) => {
     if (!tema) return "";
     const match = tema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z0-9]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
     return match ? match[1].trim() : tema;
   };
-
   // ===== HANDLERS =====
-  const handleZoomCsvUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
 
-    setIsLoading(true);
-    try {
-      const text = await file.text();
-      
-      const lines = text.split('\n').filter(line => line.trim());
-      let delimiter = ';';
-      
-      if (!lines[0].includes(';')) {
-        delimiter = lines[0].includes('\t') ? '\t' : ',';
-      }
-      
-      const headers = lines[0].split(delimiter).map(h => h.trim().replace(/^"|"$/g, ''));
-      
-      const parsedZoomData = [];
-      for (let i = 1; i < lines.length; i++) {
-        if (!lines[i].trim()) continue;
-        
-        const values = lines[i].split(delimiter).map(v => v.trim().replace(/^"|"$/g, ''));
-        const row = {};
-        headers.forEach((header, index) => {
-          row[header] = values[index] || "";
-        });
-        parsedZoomData.push(row);
-      }
-
-      console.log("=== INICIANDO PROCESAMIENTO CSV ZOOM ===");
-      console.log("Total registros Zoom:", parsedZoomData.length);
-      console.log("Headers del Excel actual:", currentHeaders);
-      
-      // Merge semanal: acumula CSVs sin perder semanas anteriores y elimina duplicados básicos
-      const mergedZoom = [...zoomData, ...parsedZoomData];
-      const seen = new Set();
-      const uniqueMerged = mergedZoom.filter(z => {
-        const host = z['Anfitrión'] || z['Host'] || '';
-        const topic = z['Tema'] || z['Topic'] || '';
-        const start = z['Hora de inicio'] || z['Start Time'] || '';
-        const end = z['Hora de finalización'] || z['End Time'] || '';
-        const key = `${host}|||${topic}|||${start}|||${end}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-      setZoomData(uniqueMerged);
-
-      const docentesToProcess = [...new Set(data.map(row => row.DOCENTE).filter(d => d && d.trim() !== ''))];
-
-      if (docentesToProcess.length === 0) {
-        alert("No hay docentes registrados en el Excel para autocompletar");
-        return;
-      }
-
-      console.log(`📋 Modo: TODOS los docentes`);
-      console.log(`📋 Docentes a procesar (${docentesToProcess.length}):`, docentesToProcess);
-
-      let updatedCount = 0;
-      let createdCount = 0;
-      const newData = [...data];
-      const sesionesUsadasGlobal = new Set();
-
-      const updateRowWithZoom = (row, zoomInfo) => {
-        const updatedRow = { ...row };
-        
-        const possibleDateCols = ['DIA', 'Dia', 'Fecha', 'FECHA', 'Columna 13', 'COLUMNA 13'];
-        const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
-        const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
-        const possibleFinalizaCols = ['FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)', 'Hora Finalización Zoom'];
-        
-        for (const col of possibleDateCols) {
-          if (currentHeaders.includes(col)) {
-            updatedRow[col] = zoomInfo.fecha;
-            break;
-          }
-        }
-        
-        for (const col of possibleStartCols) {
-          if (currentHeaders.includes(col)) {
-            updatedRow[col] = zoomInfo.horaInicio;
-            break;
-          }
-        }
-        
-        for (const col of possibleEndCols) {
-          if (currentHeaders.includes(col)) {
-            updatedRow[col] = zoomInfo.horaFin;
-            break;
-          }
-        }
-        
-        // NUEVO: Guardar hora de finalización del Zoom
-        for (const col of possibleFinalizaCols) {
-          if (currentHeaders.includes(col)) {
-            updatedRow[col] = zoomInfo.horaFinalizacion;
-            break;
-          }
-        }
-        
-        updatedRow.CURSO = zoomInfo.curso;
-        updatedRow.TURNO = zoomInfo.turno;
-        
-        return updatedRow;
-      };
-
-      docentesToProcess.forEach(docenteActual => {
-        console.log(`\n--- Procesando: ${docenteActual} ---`);
-        
-        const sesionesZoomDocente = parsedZoomData.filter(zoomRow => {
-          const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
-          return matchDocente(docenteActual, zoomDocente);
-        });
-        console.log(`📊 Sesiones Zoom encontradas para ${docenteActual}:`, sesionesZoomDocente.length);
-
-        console.log("Buscando filas para autocompletar...");
-        
-        // Primera pasada: Autocompletar filas que coinciden exactamente
-        newData.forEach((row, index) => {
-          if (row.DOCENTE !== docenteActual) return;
-
-          for (const zoomRow of parsedZoomData) {
-            const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
-            const zoomTema = zoomRow['Tema'] || zoomRow['Topic'] || "";
-            
-            if (!matchDocente(docenteActual, zoomDocente) || !zoomTema) continue;
-
-            const temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
-            
-            if (!temaMatch) continue;
-
-            const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatch;
-            const cursoZoom = cursoParte.trim();
-            const sesionZoom = sesionNumeroStr ? parseInt(sesionNumeroStr) : 0;
-
-            const claveZoom = `${normalizeCursoName(cursoZoom)}|||${seccionZoom.toUpperCase()}|||${sesionZoom}`;
-            
-            if (sesionesUsadasGlobal.has(claveZoom)) continue;
-
-            const cursoMatch = row.CURSO && normalizeCursoName(row.CURSO) === normalizeCursoName(cursoZoom);
-            const seccionMatch = row.SECCION && normalizeSeccion(row.SECCION) === normalizeSeccion(seccionZoom);
-            const sesionMatch = row.SESION && parseInt(String(row.SESION)) === sesionZoom;
-
-            if (cursoMatch && seccionMatch && sesionMatch) {
-              const fechaInicio = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
-              const fechaFin = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
-              
-              const updatedRow = { ...row };
-              
-              const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
-              for (const col of possibleDateCols) {
-                if (currentHeaders.includes(col) && (!updatedRow[col] || updatedRow[col].toString().trim() === '')) {
-                  updatedRow[col] = extractDate(fechaInicio);
-                  break;
-                }
-              }
-              
-              const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
-              for (const col of possibleStartCols) {
-                if (currentHeaders.includes(col) && (!updatedRow[col] || updatedRow[col].toString().trim() === '')) {
-                  updatedRow[col] = extractTime(fechaInicio);
-                  break;
-                }
-              }
-              
-              const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
-              for (const col of possibleEndCols) {
-                if (currentHeaders.includes(col) && (!updatedRow[col] || updatedRow[col].toString().trim() === '')) {
-                  updatedRow[col] = extractTime(fechaFin);
-                  break;
-                }
-              }
-              
-              // NUEVO: Guardar hora de finalización del Zoom
-              const possibleFinalizaCols = ['FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)', 'Hora Finalización Zoom'];
-              for (const col of possibleFinalizaCols) {
-                if (currentHeaders.includes(col) && (!updatedRow[col] || updatedRow[col].toString().trim() === '')) {
-                  updatedRow[col] = extractTime(fechaFin);
-                  break;
-                }
-              }
-              
-              if (!updatedRow.TURNO || updatedRow.TURNO.toString().trim() === '') {
-                updatedRow.TURNO = detectTurno(fechaInicio);
-              }
-              
-              newData[index] = updatedRow;
-              sesionesUsadasGlobal.add(claveZoom);
-              updatedCount++;
-              
-              console.log(`✓ Fila ${index} AUTOCOMPLETADA: ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}`);
-              break;
-            }
-          }
-        });
-
-        // Segunda pasada: Autocompletar filas vacías
-        console.log("Buscando filas vacías para autocompletar...");
-        
-        newData.forEach((row, index) => {
-          if (row.DOCENTE !== docenteActual) return;
-
-          const hasEmptySession = !row.CURSO || row.CURSO.toString().trim() === '' ||
-                                 !row.SECCION || row.SECCION.toString().trim() === '' ||
-                                 !row.SESION || row.SESION.toString().trim() === '';
-
-          if (!hasEmptySession) return;
-
-          for (const zoomRow of parsedZoomData) {
-            const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
-            const zoomTema = zoomRow['Tema'] || zoomRow['Topic'] || "";
-            
-            if (!matchDocente(docenteActual, zoomDocente) || !zoomTema) continue;
-
-            const temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
-            
-            if (!temaMatch) continue;
-
-            const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatch;
-            const cursoZoom = cursoParte.trim();
-            const sesionZoom = sesionNumeroStr ? parseInt(sesionNumeroStr) : 0;
-
-            const claveZoom = `${normalizeCursoName(cursoZoom)}|||${seccionZoom.toUpperCase()}|||${sesionZoom}`;
-            
-            if (sesionesUsadasGlobal.has(claveZoom)) continue;
-
-            const fechaInicio = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
-            const fechaFin = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
-            
-            newData[index] = updateRowWithZoom(row, {
-              curso: cursoZoom,
-              fecha: extractDate(fechaInicio),
-              horaInicio: extractTime(fechaInicio),
-              horaFin: extractTime(fechaFin),
-              horaFinalizacion: extractTime(fechaFin),
-              turno: detectTurno(fechaInicio)
-            });
-            
-            newData[index].CURSO = cursoZoom;
-            newData[index].SECCION = seccionZoom;
-            newData[index].SESION = sesionZoom;
-            
-            sesionesUsadasGlobal.add(claveZoom);
-            updatedCount++;
-            
-            console.log(`✓ Fila vacía ${index} COMPLETADA con: ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}`);
-            break;
-          }
-        });
-
-        // Fallback adicional: emparejar por horario cuando el Tema no contiene PEAD-
-        {
-          const usedZoomByStart = new Set();
-          const timeToMinutes = (timeStr) => {
-            if (!timeStr || typeof timeStr !== 'string') return 0;
-            let s = timeStr.trim();
-            s = s.replace(/a\.\s*m\.|p\.\s*m\./gi, (m) => m.toLowerCase().includes('a') ? 'AM' : 'PM');
-            const m12 = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)/i);
-            if (m12) {
-              let h = parseInt(m12[1]) || 0; const min = parseInt(m12[2]) || 0; const sec = parseInt(m12[3]||'0')||0; const p = m12[4].toUpperCase();
-              if (p === 'PM' && h !== 12) h += 12; if (p === 'AM' && h === 12) h = 0;
-              return h * 60 + min + sec / 60;
-            }
-            const m24 = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-            if (m24) {
-              const h = parseInt(m24[1]) || 0; const min = parseInt(m24[2]) || 0; const sec = parseInt(m24[3]||'0')||0;
-              return h * 60 + min + sec / 60;
-            }
-            return 0;
-          };
-
-          newData.forEach((row, index) => {
-            if (row.DOCENTE !== docenteActual) return;
-
-            const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
-            const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
-            const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
-
-            const horaProg = row['HORA INICIO'] || row['Hora Inicio'] || row['INICIO'] || row['inicio'] || '';
-            const hasFecha = possibleDateCols.some(col => currentHeaders.includes(col) && row[col] && String(row[col]).trim() !== '');
-            const hasHoraInicio = possibleStartCols.some(col => currentHeaders.includes(col) && row[col] && String(row[col]).trim() !== '');
-            const hasHoraFin = possibleEndCols.some(col => currentHeaders.includes(col) && row[col] && String(row[col]).trim() !== '');
-
-            if (!horaProg || (hasFecha && hasHoraInicio && hasHoraFin)) return;
-
-            const tProg = timeToMinutes(String(horaProg));
-            if (tProg === 0) return;
-
-            let bestZoom = null; let bestStartStr = null; let bestEndStr = null; let bestDiff = Infinity;
-
-            parsedZoomData.forEach((zoomRow) => {
-              const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
-              if (!matchDocente(docenteActual, zoomDocente)) return;
-
-              const startStr = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
-              const endStr = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
-              if (!startStr || usedZoomByStart.has(startStr)) return;
-
-              const tz = timeToMinutes(extractTime(startStr));
-              if (tz === 0) return;
-
-              const diff = Math.abs(tz - tProg);
-              if (diff < bestDiff && diff <= 120) {
-                bestDiff = diff;
-                bestZoom = zoomRow;
-                bestStartStr = startStr;
-                bestEndStr = endStr;
-              }
-            });
-
-            if (bestZoom) {
-              const fechaInicio = bestStartStr || "";
-              const fechaFin = bestEndStr || "";
-
-              const updatedRow = updateRowWithZoom(row, {
-                curso: row.CURSO || extractCursoFromTema(bestZoom['Tema'] || bestZoom['Topic'] || ""),
-                fecha: extractDate(fechaInicio),
-                horaInicio: extractTime(fechaInicio),
-                horaFin: extractTime(fechaFin),
-                horaFinalizacion: extractTime(fechaFin),
-                turno: detectTurno(fechaInicio)
-              });
-
-              newData[index] = updatedRow;
-
-              usedZoomByStart.add(bestStartStr);
-              updatedCount++;
-              console.log(`✓ Fallback por horario aplicado en fila ${index} (dif ${Math.round(bestDiff)} min)`);
-            }
-          });
-        }
-
-        // Tercera pasada: Crear nuevas filas necesarias
-        console.log("\nVerificando si hay sesiones realmente faltantes...");
-        
-        parsedZoomData.forEach((zoomRow) => {
+  const handleAutocompletarConZoom = async () => {
+  if (data.length === 0) {
+    mostrarToast(`⚠️ Primero carga el archivo Excel`, "warning");
+    alert("⚠️ Primero carga el archivo Excel");
+    return;
+  }
+  setIsLoading(true);
+ 
+  try {
+    console.log("=== INICIANDO PROCESO COMPLETO ===");
+   
+    // PASO 1: Autocompletar filas existentes con datos de Zoom (si hay CSV cargado)
+    let dataProcesada = [...data];
+   
+    if (zoomData.length > 0) {
+      console.log("\n📋 PASO 1: Autocompletando filas existentes con datos de Zoom");
+     
+      dataProcesada.forEach((row, index) => {
+        const docente = row.DOCENTE;
+        const curso = row.CURSO;
+        const seccion = row.SECCION;
+        const sesion = row.SESION;
+        if (!docente || !curso || !seccion || !sesion) return;
+        const sesionZoom = zoomData.find(zoomRow => {
           const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
           const zoomTema = zoomRow['Tema'] || zoomRow['Topic'] || "";
-          
-          if (!matchDocente(docenteActual, zoomDocente) || !zoomTema) return;
-
+         
+          if (!matchDocente(docente, zoomDocente)) return false;
+         
           const temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
-          
-          if (!temaMatch) return;
-
+          if (!temaMatch) return false;
+         
           const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatch;
           const cursoZoom = cursoParte.trim();
           const sesionZoom = sesionNumeroStr ? parseInt(sesionNumeroStr) : 0;
-
-          const claveZoom = `${normalizeCursoName(cursoZoom)}|||${seccionZoom.toUpperCase()}|||${sesionZoom}`;
-
-          if (sesionesUsadasGlobal.has(claveZoom)) return;
-
-          const existingRow = newData.find(row => 
-            row.DOCENTE === docenteActual &&
-            normalizeCursoName(row.CURSO || "") === normalizeCursoName(cursoZoom) &&
-            normalizeSeccion(row.SECCION || "") === normalizeSeccion(seccionZoom) &&
-            parseInt(String(row.SESION || 0)) === sesionZoom
-          );
-
-          if (existingRow) {
-            console.log(`⚠️ Ya existe fila para ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}. NO se crea duplicado.`);
-            sesionesUsadasGlobal.add(claveZoom);
-            return;
-          }
-
-          const fechaInicio = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
-          const fechaFin = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
-
-          const newRow = {};
-          currentHeaders.forEach(header => {
-            newRow[header] = "";
-          });
-
-          newRow.DOCENTE = docenteActual;
-          newRow.CURSO = cursoZoom;
-          newRow.SECCION = seccionZoom;
-          newRow.SESION = sesionZoom;
-          newRow.TURNO = detectTurno(fechaInicio);
-
-          const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA'];
-          const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio'];
-          const possibleEndCols = ['fin', 'FIN', 'Hora Fin'];
-          const possibleFinalizaCols = ['FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)', 'Hora Finalización Zoom'];
-          
+         
+          // Usar matchSecciones en lugar de igualdad exacta
+          return normalizeCursoName(cursoZoom) === normalizeCursoName(curso) &&
+                 matchSecciones(seccion, seccionZoom) &&
+                 sesionZoom === parseInt(sesion);
+        });
+        if (sesionZoom) {
+          const fechaInicio = sesionZoom['Hora de inicio'] || sesionZoom['Start Time'] || "";
+          const fechaFin = sesionZoom['Hora de finalización'] || sesionZoom['End Time'] || "";
+         
+          const fechaExtraida = extractDate(fechaInicio);
+          const horaInicioExtraida = extractTime(fechaInicio);
+          const horaFinExtraida = extractTime(fechaFin);
+         
+          const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
           for (const col of possibleDateCols) {
             if (currentHeaders.includes(col)) {
-              newRow[col] = extractDate(fechaInicio);
+              dataProcesada[index][col] = fechaExtraida;
               break;
             }
           }
-          
+         
+          const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
           for (const col of possibleStartCols) {
             if (currentHeaders.includes(col)) {
-              newRow[col] = extractTime(fechaInicio);
+              dataProcesada[index][col] = horaInicioExtraida;
               break;
             }
           }
-          
+         
+          const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
           for (const col of possibleEndCols) {
             if (currentHeaders.includes(col)) {
-              newRow[col] = extractTime(fechaFin);
+              dataProcesada[index][col] = horaFinExtraida;
               break;
             }
           }
-
-          // Guardar hora de finalización del Zoom
+         
+          dataProcesada[index].TURNO = detectTurno(fechaInicio);
+         
+          // ACTUALIZADO: Guardar duración de la grabación en FINALIZA LA CLASE (ZOOM)
+          const possibleFinalizaCols = ['FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)'];
           for (const col of possibleFinalizaCols) {
             if (currentHeaders.includes(col)) {
-              newRow[col] = extractTime(fechaFin);
+              dataProcesada[index][col] = extractDuration(sesionZoom);
               break;
             }
           }
-
-          newData.push(newRow);
-          sesionesUsadasGlobal.add(claveZoom);
-          createdCount++;
           
-          console.log(`✓ Nueva fila realmente necesaria: ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}`);
-        });
+          // Mostrar notificación de éxito
+          const temaZoom = sesionZoom['Tema'] || sesionZoom['Topic'] || "";
+          const zoomMatch = temaZoom.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z0-9]+)/i);
+          const seccionZoomMostrar = zoomMatch ? zoomMatch[2] : "";
+          
+          mostrarToast(`✅ Fila actualizada:<br>
+            <b>Docente:</b> ${docente}<br>
+            <b>Excel:</b> ${seccion} / <b>Zoom:</b> ${seccionZoomMostrar}<br>
+            <b>Sesión:</b> ${sesion}`, "success");
+          console.log(` ✓ Autocompletado: ${docente} - ${curso} - Sesión ${sesion}`);
+        }
       });
 
-      setData(newData);
-
-      alert(`✅ Completado:\n\n${updatedCount} filas autocompletadas\n${createdCount} filas nuevas creadas`);
-
-    } catch (error) {
-      alert("❌ Error: " + error.message);
-      console.error(error);
-    } finally {
-      setIsLoading(false);
-      event.target.value = "";
+      // Fallback por horario
+      const usedZoomByStart = new Set();
+      const timeToMinutes = (timeStr) => {
+        if (!timeStr || typeof timeStr !== 'string') return 0;
+        let s = timeStr.trim();
+        s = s.replace(/a\.\s*m\.|p\.\s*m\./gi, (m) => m.toLowerCase().includes('a') ? 'AM' : 'PM');
+        const m12 = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)/i);
+        if (m12) {
+          let h = parseInt(m12[1]) || 0;
+          const min = parseInt(m12[2]) || 0;
+          const sec = parseInt(m12[3]||'0')||0;
+          const p = m12[4].toUpperCase();
+          if (p === 'PM' && h !== 12) h += 12;
+          if (p === 'AM' && h === 12) h = 0;
+          return h * 60 + min + sec / 60;
+        }
+        const m24 = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+        if (m24) {
+          const h = parseInt(m24[1]) || 0;
+          const min = parseInt(m24[2]) || 0;
+          const sec = parseInt(m24[3]||'0')||0;
+          return h * 60 + min + sec / 60;
+        }
+        return 0;
+      };
+      dataProcesada.forEach((row, index) => {
+        const docente = row.DOCENTE || '';
+        const horaProg = row['HORA INICIO'] || row['Hora Inicio'] || row['INICIO'] || row['inicio'] || '';
+        if (!docente || !horaProg) return;
+        const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
+        const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
+        const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
+        const hasFecha = possibleDateCols.some(col => currentHeaders.includes(col) && row[col] && String(row[col]).trim() !== '');
+        if (hasFecha) return;
+        const tProg = timeToMinutes(String(horaProg));
+        if (tProg === 0) return;
+        let bestZoom = null;
+        let bestStartStr = null;
+        let bestEndStr = null;
+        let bestDiff = Infinity;
+       
+        zoomData.forEach(zoomRow => {
+          const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || '';
+          if (!matchDocente(docente, zoomDocente)) return;
+          const startStr = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || '';
+          const endStr = zoomRow['Hora de finalización'] || zoomRow['End Time'] || '';
+          if (!startStr || usedZoomByStart.has(startStr)) return;
+          const tz = timeToMinutes(extractTime(startStr));
+          if (tz === 0) return;
+          const diff = Math.abs(tz - tProg);
+          if (diff < bestDiff && diff <= 120) {
+            bestDiff = diff;
+            bestZoom = zoomRow;
+            bestStartStr = startStr;
+            bestEndStr = endStr;
+          }
+        });
+        if (bestZoom) {
+          const fechaInicio = bestStartStr || '';
+          const fechaFin = bestEndStr || '';
+          const setIfHasHeader = (obj, colNames, val) => {
+            for (const c of colNames) {
+              if (currentHeaders.includes(c)) {
+                obj[c] = val;
+                break;
+              }
+            }
+          };
+          setIfHasHeader(row, possibleDateCols, extractDate(fechaInicio));
+          setIfHasHeader(row, possibleStartCols, extractTime(fechaInicio));
+          setIfHasHeader(row, possibleEndCols, extractTime(fechaFin));
+          // ACTUALIZADO: Guardar duración de la grabación en FINALIZA LA CLASE (ZOOM)
+          const possibleFinalizaCols = ['FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)'];
+          setIfHasHeader(row, possibleFinalizaCols, extractDuration(bestZoom));
+          row.TURNO = row.TURNO && String(row.TURNO).trim() !== '' ? row.TURNO : detectTurno(fechaInicio);
+          usedZoomByStart.add(bestStartStr);
+          
+          mostrarToast(`✅ Coincidencia por horario:<br>
+            <b>Docente:</b> ${docente}<br>
+            <b>Diferencia:</b> ${Math.round(bestDiff)} minutos`, "info");
+        }
+      });
     }
-  };
+    // PASO 2: Detectar grupos únicos por DOCENTE+CURSO+SECCIÓN
+    console.log("\n📋 PASO 2: Detectando grupos únicos por DOCENTE+CURSO+SECCIÓN");
+   
+    const gruposPorSeccion = new Map();
+   
+    dataProcesada.forEach((row, originalIndex) => {
+      const docente = row.DOCENTE || '';
+      const curso = row.CURSO || '';
+      const seccion = normalizeSeccion(row.SECCION || row['SECCIÓN'] || '');
+     
+      if (!docente || !curso || !seccion) return;
+     
+      const key = `${docente}|||${normalizeCursoName(curso)}|||${seccion}`;
+     
+      if (!gruposPorSeccion.has(key)) {
+        gruposPorSeccion.set(key, {
+          docente,
+          curso,
+          seccion: row.SECCION || row['SECCIÓN'],
+          primeraFila: row,
+          indices: [],
+          filas: [],
+          sesionesExistentes: new Set()
+        });
+      }
+     
+      const grupo = gruposPorSeccion.get(key);
+      grupo.indices.push(originalIndex);
+      grupo.filas.push(row);
+     
+      if (row.SESION) {
+        grupo.sesionesExistentes.add(parseInt(row.SESION));
+      }
+    });
+    console.log(`Total grupos detectados: ${gruposPorSeccion.size}`);
+    // PASO 3: Crear exactamente 16 sesiones por cada grupo
+    console.log("\n📋 PASO 3: Creando exactamente 16 sesiones por cada grupo");
+    const resultadoFinal = [];
+    const gruposOrdenados = Array.from(gruposPorSeccion.entries())
+      .sort((a, b) => Math.min(...a[1].indices) - Math.min(...b[1].indices));
+   
+    gruposOrdenados.forEach(([key, grupo]) => {
+      const { docente, curso, seccion, primeraFila, filas, sesionesExistentes } = grupo;
+     
+      console.log(`\n--- ${docente} - ${curso} - ${seccion} ---`);
+      console.log(` Sesiones existentes: ${Array.from(sesionesExistentes).sort((a,b) => a-b).join(', ')}`);
+      console.log(` Total filas existentes: ${filas.length}`);
+     
+      const sesionesCompletas = [];
+     
+      // Crear Map con las filas existentes del rango 1-16
+      const existingInRange = new Map();
+      filas.forEach(f => {
+        const s = parseInt(String(f.SESION || 0));
+        if (s >= 1 && s <= 16 && !existingInRange.has(s)) {
+          existingInRange.set(s, f);
+        }
+      });
+     
+      // Si hay filas existentes pero ninguna tiene SESION en rango 1-16,
+      // asignar la primera fila como SESION 1
+      if (existingInRange.size === 0 && filas.length > 0) {
+        const primeraFilaConDatos = filas[0];
+        primeraFilaConDatos.SESION = 1;
+        existingInRange.set(1, primeraFilaConDatos);
+        console.log(` 📌 Primera fila asignada como SESION 1`);
+      }
+     
+      // Crear exactamente 16 sesiones (1-16)
+      for (let sesion = 1; sesion <= 16; sesion++) {
+        if (existingInRange.has(sesion)) {
+          // Usar la fila ORIGINAL completa SIN MODIFICAR
+          const filaExistente = existingInRange.get(sesion);
+         
+          // Asegurarse de que SESION sea el número correcto
+          filaExistente.SESION = sesion;
+         
+          sesionesCompletas.push(filaExistente);
+          console.log(` ○ Sesión ${sesion}: YA EXISTE (mantenida con todos sus datos)`);
+        } else {
+          // Crear nueva fila con METADATOS básicos copiados de la primera fila
+          const nuevaFila = {};
+          
+          // PRIMERO: Detectar y copiar TODAS las columnas relacionadas con HORAS PROGRAMADAS
+          currentHeaders.forEach(columna => {
+            // Copiar SOLO los campos de horas programadas (cualquier variante de nombre)
+            const columnaUpper = columna.toUpperCase();
+            
+            if (
+              // Detectar cualquier campo que mencione HORA PROGRAMADA o variantes
+              (columnaUpper.includes('HORA') && 
+               (columnaUpper.includes('PROG') || 
+                columnaUpper.includes('PROGRAMADA')))
+            ) {
+              // Copiar el valor de la primera fila
+              nuevaFila[columna] = primeraFila[columna] || '';
+            }
+          });
+          
+          // LUEGO: Copiar los metadatos básicos
+          nuevaFila.DOCENTE = primeraFila.DOCENTE || '';
+          nuevaFila.CURSO = primeraFila.CURSO || '';
+          nuevaFila.SECCION = primeraFila.SECCION || '';
+          nuevaFila.MODELO = primeraFila.MODELO || '';
+          nuevaFila.MODALIDAD = primeraFila.MODALIDAD || '';
+          nuevaFila.CICLO = primeraFila.CICLO || '';
+          nuevaFila.PERIODO = primeraFila.PERIODO || '';
+         
+          // Aula USS copiada TAL CUAL de la primera fila
+          nuevaFila['Aula USS'] = primeraFila['Aula USS'] || primeraFila['AULA USS'] || '';
+          nuevaFila['AULA USS'] = primeraFila['Aula USS'] || primeraFila['AULA USS'] || '';
+         
+          // Otros campos de programación que deben copiarse
+          nuevaFila.DIAS = primeraFila.DIAS || '';
+          
+          // TURNO solo si existe en la primera fila (puede sobrescribirse con Zoom)
+          nuevaFila.TURNO = primeraFila.TURNO || '';
+         
+          // Campo único de esta fila
+          nuevaFila.SESION = sesion;
+         
+          // Buscar datos de Zoom para esta sesión específica
+          if (zoomData.length > 0) {
+            const sesionZoom = zoomData.find(zoomRow => {
+              const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
+              const zoomTema = zoomRow['Tema'] || zoomRow['Topic'] || "";
+             
+              if (!matchDocente(docente, zoomDocente)) return false;
+             
+              const temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
+              if (!temaMatch) return false;
+             
+              const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatch;
+              const cursoZoom = cursoParte.trim();
+              const sesionZoomNum = sesionNumeroStr ? parseInt(sesionNumeroStr) : 0;
+             
+              return normalizeCursoName(cursoZoom) === normalizeCursoName(curso) &&
+                     matchSecciones(seccion, seccionZoom) &&
+                     sesionZoomNum === sesion;
+            });
+           
+            if (sesionZoom) {
+              const fechaInicio = sesionZoom['Hora de inicio'] || sesionZoom['Start Time'] || "";
+              const fechaFin = sesionZoom['Hora de finalización'] || sesionZoom['End Time'] || "";
+             
+              // Completar SOLO los campos que vienen de Zoom
+              const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
+              for (const col of possibleDateCols) {
+                if (currentHeaders.includes(col)) {
+                  nuevaFila[col] = extractDate(fechaInicio);
+                  break;
+                }
+              }
+             
+              const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
+              for (const col of possibleStartCols) {
+                if (currentHeaders.includes(col)) {
+                  nuevaFila[col] = extractTime(fechaInicio);
+                  break;
+                }
+              }
+             
+              const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
+              for (const col of possibleEndCols) {
+                if (currentHeaders.includes(col)) {
+                  nuevaFila[col] = extractTime(fechaFin);
+                  break;
+                }
+              }
+             
+              // ACTUALIZADO: Guardar duración de la grabación en FINALIZA LA CLASE (ZOOM)
+              const possibleFinalizaCols = ['FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)'];
+              for (const col of possibleFinalizaCols) {
+                if (currentHeaders.includes(col)) {
+                  nuevaFila[col] = extractDuration(sesionZoom);
+                  break;
+                }
+              }
+             
+              // Solo actualizar TURNO si estaba vacío Y viene de Zoom
+              const turnoDetectado = detectTurno(fechaInicio);
+              if (turnoDetectado && (!nuevaFila.TURNO || String(nuevaFila.TURNO).trim() === '')) {
+                nuevaFila.TURNO = turnoDetectado;
+              }
+              
+              // Mostrar notificación
+              const temaZoom = sesionZoom['Tema'] || sesionZoom['Topic'] || "";
+              const zoomMatch = temaZoom.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z0-9]+)/i);
+              const seccionZoomMostrar = zoomMatch ? zoomMatch[2] : "";
+              
+              mostrarToast(`✅ Sesión ${sesion} creada con datos Zoom:<br>
+                <b>Docente:</b> ${docente}<br>
+                <b>Excel:</b> ${seccion} / <b>Zoom:</b> ${seccionZoomMostrar}`, "success");
+              console.log(` ✓ Sesión ${sesion}: CREADA CON DATOS ZOOM`);
+            } else {
+              console.log(` + Sesión ${sesion}: CREADA (solo metadatos copiados)`);
+            }
+          } else {
+            console.log(` + Sesión ${sesion}: CREADA (solo metadatos copiados)`);
+          }
+         
+          sesionesCompletas.push(nuevaFila);
+        }
+      }
+     
+      // Agregar el bloque completo al resultado (SOLO las 16 sesiones)
+      resultadoFinal.push(...sesionesCompletas);
+     
+      const nuevasCreadas = 16 - existingInRange.size;
+      console.log(` 📊 Total final para grupo: 16 sesiones exactas`);
+      console.log(` 📊 Sesiones existentes mantenidas: ${existingInRange.size}`);
+      console.log(` 📊 Sesiones nuevas creadas: ${nuevasCreadas}`);
+    });
+    // Agregar filas que no tienen grupo definido al final
+    dataProcesada.forEach((row) => {
+      const docente = row.DOCENTE || '';
+      const curso = row.CURSO || '';
+      const seccion = normalizeSeccion(row.SECCION || row['SECCIÓN'] || '');
+     
+      if (!docente || !curso || !seccion) {
+        resultadoFinal.push(row);
+      }
+    });
+    setData(resultadoFinal);
+    const totalGrupos = gruposPorSeccion.size;
+    const totalSesionesCreadas = Array.from(gruposPorSeccion.values())
+      .reduce((sum, grupo) => sum + (16 - grupo.sesionesExistentes.size), 0);
+    const totalConDatos = Array.from(gruposPorSeccion.values())
+      .reduce((sum, grupo) => {
+        let conDatos = 0;
+        for (let s = 1; s <= 16; s++) {
+          if (!grupo.sesionesExistentes.has(s)) {
+            const existeZoom = zoomData.some(z => {
+              const zd = z['Anfitrión'] || z['Host'] || "";
+              const zt = z['Tema'] || z['Topic'] || "";
+              if (!matchDocente(grupo.docente, zd)) return false;
+              const tm = zt.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
+              if (!tm) return false;
+              const [, cp, sz, sn] = tm;
+              return normalizeCursoName(cp.trim()) === normalizeCursoName(grupo.curso) &&
+                     matchSecciones(grupo.seccion, sz) &&
+                     (sn ? parseInt(sn) : 0) === s;
+            });
+            if (existeZoom) conDatos++;
+          }
+        }
+        return sum + conDatos;
+      }, 0);
+      
+    mostrarToast(`✅ Proceso completado:<br>
+      <b>${totalGrupos}</b> grupos procesados<br>
+      <b>${totalSesionesCreadas}</b> sesiones creadas<br>
+      <b>${totalConDatos}</b> con datos Zoom`, "success");
+      
+    alert(`✅ Proceso completado:\n\n${totalGrupos} grupos procesados\n${totalSesionesCreadas} sesiones nuevas creadas\n${totalConDatos} sesiones con datos de Zoom\n\n✅ Registros existentes mantenidos SIN modificar\n✅ Cada grupo ahora tiene EXACTAMENTE 16 sesiones`);
+    console.log("=== PROCESO FINALIZADO ===");
+     
+  } catch (error) {
+    mostrarToast(`❌ Error: ${error.message}`, "error");
+    console.error("Error en proceso:", error);
+    alert("❌ Error: " + error.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
-  // ===== FUNCIÓN PRINCIPAL: AUTOCOMPLETAR CON ZOOM =====
-  const handleAutocompletarConZoom = async () => {
-    if (data.length === 0) {
-      alert("⚠️ Primero carga el archivo Excel");
+
+const handleZoomCsvUpload = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  setIsLoading(true);
+  try {
+    const text = await file.text();
+    
+    const lines = text.split('\n').filter(line => line.trim());
+    let delimiter = ';';
+    
+    if (!lines[0].includes(';')) {
+      delimiter = lines[0].includes('\t') ? '\t' : ',';
+    }
+    
+    const headers = lines[0].split(delimiter).map(h => h.trim().replace(/^"|"$/g, ''));
+    
+    const parsedZoomData = [];
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      
+      const values = lines[i].split(delimiter).map(v => v.trim().replace(/^"|"$/g, ''));
+      const row = {};
+      headers.forEach((header, index) => {
+        row[header] = values[index] || "";
+      });
+      parsedZoomData.push(row);
+    }
+    console.log("=== INICIANDO PROCESAMIENTO CSV ZOOM ===");
+    console.log("Total registros Zoom:", parsedZoomData.length);
+    console.log("Headers del Excel actual:", currentHeaders);
+    
+    // Merge semanal: acumula CSVs sin perder semanas anteriores y elimina duplicados básicos
+    const mergedZoom = [...zoomData, ...parsedZoomData];
+    const seen = new Set();
+    const uniqueMerged = mergedZoom.filter(z => {
+      const host = z['Anfitrión'] || z['Host'] || '';
+      const topic = z['Tema'] || z['Topic'] || '';
+      const start = z['Hora de inicio'] || z['Start Time'] || '';
+      const end = z['Hora de finalización'] || z['End Time'] || '';
+      const key = `${host}|||${topic}|||${start}|||${end}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    setZoomData(uniqueMerged);
+    
+    const docentesToProcess = [...new Set(data.map(row => row.DOCENTE).filter(d => d && d.trim() !== ''))];
+    if (docentesToProcess.length === 0) {
+      mostrarToast(`⚠️ No hay docentes registrados en el Excel para autocompletar`, "warning");
+      alert("No hay docentes registrados en el Excel para autocompletar");
       return;
     }
-
-    setIsLoading(true);
     
-    try {
-      console.log("=== INICIANDO PROCESO COMPLETO ===");
+    console.log(`📋 Modo: TODOS los docentes`);
+    console.log(`📋 Docentes a procesar (${docentesToProcess.length}):`, docentesToProcess);
+    
+    let updatedCount = 0;
+    let createdCount = 0;
+    const newData = [...data];
+    const sesionesUsadasGlobal = new Set();
+    
+    const updateRowWithZoom = (row, zoomInfo, zoomRow) => {
+      const updatedRow = { ...row };
       
-      // PASO 1: Autocompletar filas existentes con datos de Zoom (si hay CSV cargado)
-      let dataProcesada = [...data];
+      const possibleDateCols = ['DIA', 'Dia', 'Fecha', 'FECHA', 'Columna 13', 'COLUMNA 13'];
+      const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
+      const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
+      const possibleFinalizaCols = ['FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)', 'Hora Finalización Zoom'];
       
-      if (zoomData.length > 0) {
-        console.log("\n📋 PASO 1: Autocompletando filas existentes con datos de Zoom");
-        
-        dataProcesada.forEach((row, index) => {
-          const docente = row.DOCENTE;
-          const curso = row.CURSO;
-          const seccion = row.SECCION;
-          const sesion = row.SESION;
-
-          if (!docente || !curso || !seccion || !sesion) return;
-
-          const sesionZoom = zoomData.find(zoomRow => {
-            const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
-            const zoomTema = zoomRow['Tema'] || zoomRow['Topic'] || "";
+      for (const col of possibleDateCols) {
+        if (currentHeaders.includes(col)) {
+          updatedRow[col] = zoomInfo.fecha;
+          break;
+        }
+      }
+      
+      for (const col of possibleStartCols) {
+        if (currentHeaders.includes(col)) {
+          updatedRow[col] = zoomInfo.horaInicio;
+          break;
+        }
+      }
+      
+      for (const col of possibleEndCols) {
+        if (currentHeaders.includes(col)) {
+          updatedRow[col] = zoomInfo.horaFin;
+          break;
+        }
+      }
+      
+      // Guardar duración de la grabación en FINALIZA LA CLASE (ZOOM)
+      for (const col of possibleFinalizaCols) {
+        if (currentHeaders.includes(col)) {
+          updatedRow[col] = extractDuration(zoomRow);
+          break;
+        }
+      }
+      
+      updatedRow.CURSO = zoomInfo.curso;
+      updatedRow.TURNO = zoomInfo.turno;
+      
+      return updatedRow;
+    };
+    
+    docentesToProcess.forEach(docenteActual => {
+      console.log(`\n--- Procesando: ${docenteActual} ---`);
+      
+      const sesionesZoomDocente = parsedZoomData.filter(zoomRow => {
+        const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
+        return matchDocente(docenteActual, zoomDocente);
+      });
+      console.log(`📊 Sesiones Zoom encontradas para ${docenteActual}:`, sesionesZoomDocente.length);
+      console.log("Buscando filas para autocompletar...");
+      
+      // Primera pasada: Autocompletar filas que coinciden exactamente
+      newData.forEach((row, index) => {
+        if (row.DOCENTE !== docenteActual) return;
+        for (const zoomRow of parsedZoomData) {
+          const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
+          const zoomTema = zoomRow['Tema'] || zoomRow['Topic'] || "";
+          
+          if (!matchDocente(docenteActual, zoomDocente) || !zoomTema) continue;
+          
+          // Patrón estándar para encontrar PEAD
+          const temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z0-9]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
+          
+          if (!temaMatch) {
+            // Intentar patrón más flexible para encontrar variantes de PEAD
+            const patternFlexible = /(.+?)(?:(?:–|-|\/|:)\s*)(PEAD[-_ ]?[a-zA-Z0-9]*)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i;
+            const temaMatchFlexible = zoomTema.match(patternFlexible);
             
-            if (!matchDocente(docente, zoomDocente)) return false;
+            if (!temaMatchFlexible) continue;
             
-            const temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
-            if (!temaMatch) return false;
+            // Usar el formato flexible si fue encontrado
+            const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatchFlexible;
+            mostrarToast(`⚠️ Formato no estándar en Zoom:<br>
+              <b>Docente:</b> ${zoomDocente}<br>
+              <b>Sección en Zoom:</b> "${seccionZoom}"`, "warning");
+            continue;
+          }
+          
+          const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatch;
+          const cursoZoom = cursoParte.trim();
+          const sesionZoom = sesionNumeroStr ? parseInt(sesionNumeroStr) : 0;
+          const claveZoom = `${normalizeCursoName(cursoZoom)}|||${seccionZoom.toUpperCase()}|||${sesionZoom}`;
+          
+          if (sesionesUsadasGlobal.has(claveZoom)) continue;
+          
+          const cursoMatch = row.CURSO && normalizeCursoName(row.CURSO) === normalizeCursoName(cursoZoom);
+          const seccionMatch = row.SECCION && matchSecciones(row.SECCION, seccionZoom);
+          const sesionMatch = row.SESION && parseInt(String(row.SESION)) === sesionZoom;
+          
+          if (cursoMatch && seccionMatch && sesionMatch) {
+            const fechaInicio = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
+            const fechaFin = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
             
-            const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatch;
-            const cursoZoom = cursoParte.trim();
-            const sesionZoom = sesionNumeroStr ? parseInt(sesionNumeroStr) : 0;
-            
-            return normalizeCursoName(cursoZoom) === normalizeCursoName(curso) &&
-                   normalizeSeccion(seccionZoom) === normalizeSeccion(seccion) &&
-                   sesionZoom === parseInt(sesion);
-          });
-
-          if (sesionZoom) {
-            const fechaInicio = sesionZoom['Hora de inicio'] || sesionZoom['Start Time'] || "";
-            const fechaFin = sesionZoom['Hora de finalización'] || sesionZoom['End Time'] || "";
-            
-            const fechaExtraida = extractDate(fechaInicio);
-            const horaInicioExtraida = extractTime(fechaInicio);
-            const horaFinExtraida = extractTime(fechaFin);
+            const updatedRow = { ...row };
             
             const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
             for (const col of possibleDateCols) {
               if (currentHeaders.includes(col)) {
-                dataProcesada[index][col] = fechaExtraida;
+                updatedRow[col] = extractDate(fechaInicio);
                 break;
               }
             }
@@ -771,7 +1002,7 @@ function App() {
             const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
             for (const col of possibleStartCols) {
               if (currentHeaders.includes(col)) {
-                dataProcesada[index][col] = horaInicioExtraida;
+                updatedRow[col] = extractTime(fechaInicio);
                 break;
               }
             }
@@ -779,26 +1010,109 @@ function App() {
             const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
             for (const col of possibleEndCols) {
               if (currentHeaders.includes(col)) {
-                dataProcesada[index][col] = horaFinExtraida;
+                updatedRow[col] = extractTime(fechaFin);
                 break;
               }
             }
             
-            dataProcesada[index].TURNO = detectTurno(fechaInicio);
-            
-            const possibleFinalizaCols = ['FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)'];
+            // Guardar duración de la grabación en FINALIZA LA CLASE (ZOOM)
+            const possibleFinalizaCols = ['FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)', 'Hora Finalización Zoom'];
             for (const col of possibleFinalizaCols) {
               if (currentHeaders.includes(col)) {
-                dataProcesada[index][col] = horaFinExtraida;
+                updatedRow[col] = extractDuration(zoomRow);
                 break;
               }
             }
             
-            console.log(`  ✓ Autocompletado: ${docente} - ${curso} - Sesión ${sesion}`);
+            if (!updatedRow.TURNO || updatedRow.TURNO.toString().trim() === '') {
+              updatedRow.TURNO = detectTurno(fechaInicio);
+            }
+            
+            newData[index] = updatedRow;
+            sesionesUsadasGlobal.add(claveZoom);
+            updatedCount++;
+            
+            mostrarToast(`✅ Fila actualizada:<br>
+              <b>Docente:</b> ${docenteActual}<br>
+              <b>Excel:</b> ${row.SECCION} / <b>Zoom:</b> ${seccionZoom}<br>
+              <b>Sesión:</b> ${sesionZoom}`, "info");
+            console.log(`✓ Fila ${index} AUTOCOMPLETADA: ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}`);
+            break;
           }
-        });
-
-        // Fallback por horario
+        }
+      });
+      
+      // Segunda pasada: Autocompletar filas vacías
+      console.log("Buscando filas vacías para autocompletar...");
+      
+      newData.forEach((row, index) => {
+        if (row.DOCENTE !== docenteActual) return;
+        const hasEmptySession = !row.CURSO || row.CURSO.toString().trim() === '' ||
+                               !row.SECCION || row.SECCION.toString().trim() === '' ||
+                               !row.SESION || row.SESION.toString().trim() === '';
+        if (!hasEmptySession) return;
+        
+        for (const zoomRow of parsedZoomData) {
+          const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
+          const zoomTema = zoomRow['Tema'] || zoomRow['Topic'] || "";
+          
+          if (!matchDocente(docenteActual, zoomDocente) || !zoomTema) continue;
+          
+          // Patrón estándar para encontrar PEAD
+          const temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z0-9]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
+          
+          if (!temaMatch) {
+            // Intentar patrón más flexible para encontrar variantes de PEAD
+            const patternFlexible = /(.+?)(?:(?:–|-|\/|:)\s*)(PEAD[-_ ]?[a-zA-Z0-9]*)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i;
+            const temaMatchFlexible = zoomTema.match(patternFlexible);
+            
+            if (!temaMatchFlexible) continue;
+            
+            // Usar el formato flexible si fue encontrado
+            const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatchFlexible;
+            mostrarToast(`⚠️ Formato no estándar en Zoom:<br>
+              <b>Docente:</b> ${zoomDocente}<br>
+              <b>Sección en Zoom:</b> "${seccionZoom}"`, "warning");
+            continue;
+          }
+          
+          const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatch;
+          const cursoZoom = cursoParte.trim();
+          const sesionZoom = sesionNumeroStr ? parseInt(sesionNumeroStr) : 0;
+          const claveZoom = `${normalizeCursoName(cursoZoom)}|||${seccionZoom.toUpperCase()}|||${sesionZoom}`;
+          
+          if (sesionesUsadasGlobal.has(claveZoom)) continue;
+          
+          const fechaInicio = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
+          const fechaFin = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
+          
+          newData[index] = updateRowWithZoom(row, {
+            curso: cursoZoom,
+            fecha: extractDate(fechaInicio),
+            horaInicio: extractTime(fechaInicio),
+            horaFin: extractTime(fechaFin),
+            turno: detectTurno(fechaInicio)
+          }, zoomRow);
+          
+          newData[index].CURSO = cursoZoom;
+          newData[index].SECCION = seccionZoom;
+          newData[index].SESION = sesionZoom;
+          
+          sesionesUsadasGlobal.add(claveZoom);
+          updatedCount++;
+          
+          mostrarToast(`✅ Fila vacía completada:<br>
+            <b>Docente:</b> ${docenteActual}<br>
+            <b>Curso:</b> ${cursoZoom}<br>
+            <b>Sección en Zoom:</b> ${seccionZoom}<br>
+            <b>Sesión:</b> ${sesionZoom}`, "success");
+          console.log(`✓ Fila vacía ${index} COMPLETADA con: ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}`);
+          break;
+        }
+      });
+      
+      // Fallback adicional: emparejar por horario cuando el Tema no contiene PEAD-
+      {
         const usedZoomByStart = new Set();
         const timeToMinutes = (timeStr) => {
           if (!timeStr || typeof timeStr !== 'string') return 0;
@@ -806,50 +1120,33 @@ function App() {
           s = s.replace(/a\.\s*m\.|p\.\s*m\./gi, (m) => m.toLowerCase().includes('a') ? 'AM' : 'PM');
           const m12 = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)/i);
           if (m12) {
-            let h = parseInt(m12[1]) || 0;
-            const min = parseInt(m12[2]) || 0;
-            const sec = parseInt(m12[3]||'0')||0;
-            const p = m12[4].toUpperCase();
-            if (p === 'PM' && h !== 12) h += 12;
-            if (p === 'AM' && h === 12) h = 0;
+            let h = parseInt(m12[1]) || 0; const min = parseInt(m12[2]) || 0; const sec = parseInt(m12[3]||'0')||0; const p = m12[4].toUpperCase();
+            if (p === 'PM' && h !== 12) h += 12; if (p === 'AM' && h === 12) h = 0;
             return h * 60 + min + sec / 60;
           }
           const m24 = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
           if (m24) {
-            const h = parseInt(m24[1]) || 0;
-            const min = parseInt(m24[2]) || 0;
-            const sec = parseInt(m24[3]||'0')||0;
+            const h = parseInt(m24[1]) || 0; const min = parseInt(m24[2]) || 0; const sec = parseInt(m24[3]||'0')||0;
             return h * 60 + min + sec / 60;
           }
           return 0;
         };
-
-        dataProcesada.forEach((row, index) => {
-          const docente = row.DOCENTE || '';
-          const horaProg = row['HORA INICIO'] || row['Hora Inicio'] || row['INICIO'] || row['inicio'] || '';
-          if (!docente || !horaProg) return;
-
+        newData.forEach((row, index) => {
+          if (row.DOCENTE !== docenteActual) return;
           const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
           const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
           const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
+          const horaProg = row['HORA INICIO'] || row['Hora Inicio'] || row['INICIO'] || row['inicio'] || '';
           const hasFecha = possibleDateCols.some(col => currentHeaders.includes(col) && row[col] && String(row[col]).trim() !== '');
-          const hasHoraInicio = possibleStartCols.some(col => currentHeaders.includes(col) && row[col] && String(row[col]).trim() !== '');
-          const hasHoraFin = possibleEndCols.some(col => currentHeaders.includes(col) && row[col] && String(row[col]).trim() !== '');
-          if (hasFecha && hasHoraInicio && hasHoraFin) return;
-
+          if (!horaProg || hasFecha) return;
           const tProg = timeToMinutes(String(horaProg));
           if (tProg === 0) return;
-
-          let bestZoom = null;
-          let bestStartStr = null;
-          let bestEndStr = null;
-          let bestDiff = Infinity;
-          
-          zoomData.forEach(zoomRow => {
-            const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || '';
-            if (!matchDocente(docente, zoomDocente)) return;
-            const startStr = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || '';
-            const endStr = zoomRow['Hora de finalización'] || zoomRow['End Time'] || '';
+          let bestZoom = null; let bestStartStr = null; let bestEndStr = null; let bestDiff = Infinity;
+          parsedZoomData.forEach((zoomRow) => {
+            const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
+            if (!matchDocente(docenteActual, zoomDocente)) return;
+            const startStr = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
+            const endStr = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
             if (!startStr || usedZoomByStart.has(startStr)) return;
             const tz = timeToMinutes(extractTime(startStr));
             if (tz === 0) return;
@@ -861,300 +1158,193 @@ function App() {
               bestEndStr = endStr;
             }
           });
-
           if (bestZoom) {
-            const fechaInicio = bestStartStr || '';
-            const fechaFin = bestEndStr || '';
-
-            const setIfHasHeader = (obj, colNames, val) => {
-              for (const c of colNames) {
-                if (currentHeaders.includes(c)) {
-                  obj[c] = val;
-                  break;
-                }
-              }
-            };
-
-            setIfHasHeader(row, possibleDateCols, extractDate(fechaInicio));
-            setIfHasHeader(row, possibleStartCols, extractTime(fechaInicio));
-            setIfHasHeader(row, possibleEndCols, extractTime(fechaFin));
-
-            row.TURNO = row.TURNO && String(row.TURNO).trim() !== '' ? row.TURNO : detectTurno(fechaInicio);
-
+            const fechaInicio = bestStartStr || "";
+            const fechaFin = bestEndStr || "";
+            const updatedRow = updateRowWithZoom(row, {
+              curso: row.CURSO || extractCursoFromTema(bestZoom['Tema'] || bestZoom['Topic'] || ""),
+              fecha: extractDate(fechaInicio),
+              horaInicio: extractTime(fechaInicio),
+              horaFin: extractTime(fechaFin),
+              turno: detectTurno(fechaInicio)
+            }, bestZoom);
+            newData[index] = updatedRow;
             usedZoomByStart.add(bestStartStr);
+            updatedCount++;
+            
+            mostrarToast(`✅ Coincidencia por horario:<br>
+              <b>Docente:</b> ${docenteActual}<br>
+              <b>Diferencia:</b> ${Math.round(bestDiff)} minutos`, "info");
+            console.log(`✓ Fallback por horario aplicado en fila ${index} (dif ${Math.round(bestDiff)} min)`);
           }
         });
       }
-
-      // PASO 2: Detectar grupos únicos por DOCENTE+CURSO+SECCIÓN
-      console.log("\n📋 PASO 2: Detectando grupos únicos por DOCENTE+CURSO+SECCIÓN");
       
-      const gruposPorSeccion = new Map();
+      // Tercera pasada: Crear nuevas filas necesarias
+      console.log("\nVerificando si hay sesiones realmente faltantes...");
       
-      dataProcesada.forEach((row, originalIndex) => {
-        const docente = row.DOCENTE || '';
-        const curso = row.CURSO || '';
-        const seccion = normalizeSeccion(row.SECCION || row['SECCIÓN'] || '');
+      parsedZoomData.forEach((zoomRow) => {
+        const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
+        const zoomTema = zoomRow['Tema'] || zoomRow['Topic'] || "";
         
-        if (!docente || !curso || !seccion) return;
+        if (!matchDocente(docenteActual, zoomDocente) || !zoomTema) return;
         
-        const key = `${docente}|||${normalizeCursoName(curso)}|||${seccion}`;
+        // Patrón estándar para encontrar PEAD
+        const temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z0-9]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
         
-        if (!gruposPorSeccion.has(key)) {
-          gruposPorSeccion.set(key, {
-            docente,
-            curso,
-            seccion: row.SECCION || row['SECCIÓN'],
-            primeraFila: row,
-            indices: [],
-            filas: [],
-            sesionesExistentes: new Set()
-          });
-        }
-        
-        const grupo = gruposPorSeccion.get(key);
-        grupo.indices.push(originalIndex);
-        grupo.filas.push(row);
-        
-        if (row.SESION) {
-          grupo.sesionesExistentes.add(parseInt(row.SESION));
-        }
-      });
-
-      console.log(`Total grupos detectados: ${gruposPorSeccion.size}`);
-
-      // PASO 3: Crear exactamente 16 sesiones por cada grupo
-      console.log("\n📋 PASO 3: Creando exactamente 16 sesiones por cada grupo");
-
-      const resultadoFinal = [];
-      const gruposOrdenados = Array.from(gruposPorSeccion.entries())
-        .sort((a, b) => Math.min(...a[1].indices) - Math.min(...b[1].indices));
-
-      // Busca esta sección en handleAutocompletarConZoom (alrededor de la línea 850-950)
-      // Reemplaza TODA la sección "SEGUNDO: Manejar el bloque 1-16"
-
-      gruposOrdenados.forEach(([key, grupo]) => {
-        const { docente, curso, seccion, primeraFila, filas, sesionesExistentes } = grupo;
-        
-        console.log(`\n--- ${docente} - ${curso} - ${seccion} ---`);
-        console.log(`   Sesiones existentes: ${Array.from(sesionesExistentes).sort((a,b) => a-b).join(', ')}`);
-        console.log(`   Total filas existentes: ${filas.length}`);
-        
-        const sesionesCompletas = [];
-        
-        // Crear Map con las filas existentes del rango 1-16
-        const existingInRange = new Map();
-        filas.forEach(f => {
-          const s = parseInt(String(f.SESION || 0));
-          if (s >= 1 && s <= 16 && !existingInRange.has(s)) {
-            existingInRange.set(s, f);
+        if (!temaMatch) {
+          // Intentar patrón más flexible para encontrar variantes de PEAD
+          const patternFlexible = /(.+?)(?:(?:–|-|\/|:)\s*)(PEAD[-_ ]?[a-zA-Z0-9]*)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i;
+          const temaMatchFlexible = zoomTema.match(patternFlexible);
+          
+          if (temaMatchFlexible) {
+            const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatchFlexible;
+            mostrarToast(`⚠️ Formato no estándar en Zoom:<br>
+              <b>Docente:</b> ${zoomDocente}<br>
+              <b>Sección en Zoom:</b> "${seccionZoom}"`, "warning");
           }
+          return;
+        }
+        
+        const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatch;
+        const cursoZoom = cursoParte.trim();
+        const sesionZoom = sesionNumeroStr ? parseInt(sesionNumeroStr) : 0;
+        const claveZoom = `${normalizeCursoName(cursoZoom)}|||${seccionZoom.toUpperCase()}|||${sesionZoom}`;
+        
+        if (sesionesUsadasGlobal.has(claveZoom)) return;
+        
+        // Buscar usando matchSecciones en lugar de igualdad exacta
+        const existingRow = newData.find(row =>
+          row.DOCENTE === docenteActual &&
+          normalizeCursoName(row.CURSO || "") === normalizeCursoName(cursoZoom) &&
+          matchSecciones(row.SECCION || "", seccionZoom) &&
+          parseInt(String(row.SESION || 0)) === sesionZoom
+        );
+        
+        if (existingRow) {
+          console.log(`⚠️ Ya existe fila para ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}. NO se crea duplicado.`);
+          mostrarToast(`✅ Coincidencia encontrada:<br>
+            <b>Docente:</b> ${docenteActual}<br>
+            <b>Excel:</b> ${existingRow.SECCION}<br>
+            <b>Zoom:</b> ${seccionZoom}`, 'info');
+          sesionesUsadasGlobal.add(claveZoom);
+          return;
+        }
+        
+        // Si se encontró el docente pero no coincide la sección, mostrar notificación
+        const filasMismoDocente = newData.filter(row => 
+          row.DOCENTE === docenteActual && 
+          normalizeCursoName(row.CURSO || "") === normalizeCursoName(cursoZoom)
+        );
+        
+        // En la parte de crear nuevas filas, cuando detectas un docente con sección diferente
+if (filasMismoDocente.length > 0) {
+  const seccionesExistentes = [...new Set(
+    filasMismoDocente
+      .map(row => row.SECCION)
+      .filter(Boolean)
+  )].join(", ");
+  
+  mostrarToast(`⚠️ Diferencia en secciones:<br>
+    <b>Docente:</b> ${docenteActual}<br>
+    <b>Secciones en Excel:</b> ${seccionesExistentes}<br>
+    <b>Sección en Zoom:</b> ${seccionZoom}`, 'warning');
+}
+        
+        const fechaInicio = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
+        const fechaFin = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
+        const newRow = {};
+        currentHeaders.forEach(header => {
+          newRow[header] = "";
         });
         
-        // Si hay filas existentes pero ninguna tiene SESION en rango 1-16, 
-        // asignar la primera fila como SESION 1
-        if (existingInRange.size === 0 && filas.length > 0) {
-          const primeraFilaConDatos = filas[0];
-          primeraFilaConDatos.SESION = 1;
-          existingInRange.set(1, primeraFilaConDatos);
-          console.log(`   📌 Primera fila asignada como SESION 1`);
-        }
+        newRow.DOCENTE = docenteActual;
+        newRow.CURSO = cursoZoom;
+        newRow.SECCION = seccionZoom;
+        newRow.SESION = sesionZoom;
+        newRow.TURNO = detectTurno(fechaInicio);
+        const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA'];
+        const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio'];
+        const possibleEndCols = ['fin', 'FIN', 'Hora Fin'];
+        const possibleFinalizaCols = ['FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)', 'Hora Finalización Zoom'];
         
-        // Crear exactamente 16 sesiones (1-16)
-        for (let sesion = 1; sesion <= 16; sesion++) {
-          if (existingInRange.has(sesion)) {
-            // Usar la fila ORIGINAL completa SIN MODIFICAR
-            const filaExistente = existingInRange.get(sesion);
-            
-            // Asegurarse de que SESION sea el número correcto
-            filaExistente.SESION = sesion;
-            
-            sesionesCompletas.push(filaExistente);
-            console.log(`  ○ Sesión ${sesion}: YA EXISTE (mantenida con todos sus datos)`);
-          } else {
-            // Crear nueva fila SOLO con METADATOS básicos copiados de la primera fila
-            const nuevaFila = {
-              // ===== METADATOS que SÍ se copian de la primera fila =====
-              DOCENTE: primeraFila.DOCENTE || '',
-              CURSO: primeraFila.CURSO || '',
-              SECCION: primeraFila.SECCION || '',
-              MODELO: primeraFila.MODELO || '',
-              MODALIDAD: primeraFila.MODALIDAD || '',
-              CICLO: primeraFila.CICLO || '',
-              PERIODO: primeraFila.PERIODO || '',
-              
-              // Aula USS copiada TAL CUAL de la primera fila
-              'Aula USS': primeraFila['Aula USS'] || primeraFila['AULA USS'] || '',
-              'AULA USS': primeraFila['Aula USS'] || primeraFila['AULA USS'] || '',
-              
-              // Otros campos de programación que deben copiarse
-              DIAS: primeraFila.DIAS || '',
-              'HORA INICIO': primeraFila['HORA INICIO'] || '',
-              'HORA FIN': primeraFila['HORA FIN'] || '',
-              
-              // TURNO solo si existe en la primera fila (puede sobrescribirse con Zoom)
-              TURNO: primeraFila.TURNO || '',
-              
-              // Campo único de esta fila
-              SESION: sesion
-              
-              // ===== TODOS los demás campos quedan VACÍOS =====
-            };
-            
-            // Buscar datos de Zoom para esta sesión específica
-            if (zoomData.length > 0) {
-              const sesionZoom = zoomData.find(zoomRow => {
-                const zoomDocente = zoomRow['Anfitrión'] || zoomRow['Host'] || "";
-                const zoomTema = zoomRow['Tema'] || zoomRow['Topic'] || "";
-                
-                if (!matchDocente(docente, zoomDocente)) return false;
-                
-                const temaMatch = zoomTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
-                if (!temaMatch) return false;
-                
-                const [, cursoParte, seccionZoom, sesionNumeroStr] = temaMatch;
-                const cursoZoom = cursoParte.trim();
-                const sesionZoomNum = sesionNumeroStr ? parseInt(sesionNumeroStr) : 0;
-                
-                return normalizeCursoName(cursoZoom) === normalizeCursoName(curso) &&
-                       normalizeSeccion(seccionZoom) === normalizeSeccion(seccion) &&
-                       sesionZoomNum === sesion;
-              });
-              
-              if (sesionZoom) {
-                const fechaInicio = sesionZoom['Hora de inicio'] || sesionZoom['Start Time'] || "";
-                const fechaFin = sesionZoom['Hora de finalización'] || sesionZoom['End Time'] || "";
-                
-                // Completar SOLO los campos que vienen de Zoom
-                const possibleDateCols = ['Columna 13', 'COLUMNA 13', 'Fecha', 'FECHA', 'DIA', 'Dia'];
-                for (const col of possibleDateCols) {
-                  if (currentHeaders.includes(col)) {
-                    nuevaFila[col] = extractDate(fechaInicio);
-                    break;
-                  }
-                }
-                
-                const possibleStartCols = ['inicio', 'INICIO', 'Hora Inicio', 'HORA INICIO'];
-                for (const col of possibleStartCols) {
-                  if (currentHeaders.includes(col)) {
-                    nuevaFila[col] = extractTime(fechaInicio);
-                    break;
-                  }
-                }
-                
-                const possibleEndCols = ['fin', 'FIN', 'Hora Fin', 'HORA FIN'];
-                for (const col of possibleEndCols) {
-                  if (currentHeaders.includes(col)) {
-                    nuevaFila[col] = extractTime(fechaFin);
-                    break;
-                  }
-                }
-                
-                const possibleFinalizaCols = ['FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)'];
-                for (const col of possibleFinalizaCols) {
-                  if (currentHeaders.includes(col)) {
-                    nuevaFila[col] = extractTime(fechaFin);
-                    break;
-                  }
-                }
-                
-                // Solo actualizar TURNO si estaba vacío Y viene de Zoom
-                const turnoDetectado = detectTurno(fechaInicio);
-                if (turnoDetectado && (!nuevaFila.TURNO || String(nuevaFila.TURNO).trim() === '')) {
-                  nuevaFila.TURNO = turnoDetectado;
-                }
-                
-                console.log(`  ✓ Sesión ${sesion}: CREADA CON DATOS ZOOM`);
-              } else {
-                console.log(`  + Sesión ${sesion}: CREADA (solo metadatos copiados)`);
-              }
-            } else {
-              console.log(`  + Sesión ${sesion}: CREADA (solo metadatos copiados)`);
-            }
-            
-            sesionesCompletas.push(nuevaFila);
+        for (const col of possibleDateCols) {
+          if (currentHeaders.includes(col)) {
+            newRow[col] = extractDate(fechaInicio);
+            break;
           }
         }
         
-        // Agregar el bloque completo al resultado (SOLO las 16 sesiones)
-        resultadoFinal.push(...sesionesCompletas);
-        
-        const nuevasCreadas = 16 - existingInRange.size;
-        console.log(`  📊 Total final para grupo: 16 sesiones exactas`);
-        console.log(`  📊 Sesiones existentes mantenidas: ${existingInRange.size}`);
-        console.log(`  📊 Sesiones nuevas creadas: ${nuevasCreadas}`);
-      });
-
-      // Agregar filas que no tienen grupo definido al final
-      dataProcesada.forEach((row) => {
-        const docente = row.DOCENTE || '';
-        const curso = row.CURSO || '';
-        const seccion = normalizeSeccion(row.SECCION || row['SECCIÓN'] || '');
-        
-        if (!docente || !curso || !seccion) {
-          resultadoFinal.push(row);
-        }
-      });
-
-      setData(resultadoFinal);
-
-      const totalGrupos = gruposPorSeccion.size;
-      const totalSesionesCreadas = Array.from(gruposPorSeccion.values())
-        .reduce((sum, grupo) => sum + (16 - grupo.sesionesExistentes.size), 0);
-      const totalConDatos = Array.from(gruposPorSeccion.values())
-        .reduce((sum, grupo) => {
-          let conDatos = 0;
-          for (let s = 1; s <= 16; s++) {
-            if (!grupo.sesionesExistentes.has(s)) {
-              const existeZoom = zoomData.some(z => {
-                const zd = z['Anfitrión'] || z['Host'] || "";
-                const zt = z['Tema'] || z['Topic'] || "";
-                if (!matchDocente(grupo.docente, zd)) return false;
-                const tm = zt.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
-                if (!tm) return false;
-                const [, cp, sz, sn] = tm;
-                return normalizeCursoName(cp.trim()) === normalizeCursoName(grupo.curso) &&
-                       normalizeSeccion(sz) === normalizeSeccion(grupo.seccion) &&
-                       (sn ? parseInt(sn) : 0) === s;
-              });
-              if (existeZoom) conDatos++;
-            }
+        for (const col of possibleStartCols) {
+          if (currentHeaders.includes(col)) {
+            newRow[col] = extractTime(fechaInicio);
+            break;
           }
-          return sum + conDatos;
-        }, 0);
-
-      alert(`✅ Proceso completado:\n\n${totalGrupos} grupos procesados\n${totalSesionesCreadas} sesiones nuevas creadas\n${totalConDatos} sesiones con datos de Zoom\n\n✅ Registros existentes mantenidos SIN modificar\n✅ Cada grupo ahora tiene EXACTAMENTE 16 sesiones`);
-
-      console.log("=== PROCESO FINALIZADO ===");
+        }
         
-    } catch (error) {
-      console.error("Error en proceso:", error);
-      alert("❌ Error: " + error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+        for (const col of possibleEndCols) {
+          if (currentHeaders.includes(col)) {
+            newRow[col] = extractTime(fechaFin);
+            break;
+          }
+        }
+        
+        // Guardar duración de la grabación en FINALIZA LA CLASE (ZOOM)
+        for (const col of possibleFinalizaCols) {
+          if (currentHeaders.includes(col)) {
+            newRow[col] = extractDuration(zoomRow);
+            break;
+          }
+        }
+        
+        newData.push(newRow);
+        sesionesUsadasGlobal.add(claveZoom);
+        createdCount++;
+        
+        mostrarToast(`✅ Nueva fila creada:<br>
+          <b>Docente:</b> ${docenteActual}<br>
+          <b>Curso:</b> ${cursoZoom}<br>
+          <b>Sección en Zoom:</b> ${seccionZoom}<br>
+          <b>Sesión:</b> ${sesionZoom}`, "success");
+        console.log(`✓ Nueva fila realmente necesaria: ${cursoZoom} - ${seccionZoom} - Sesión ${sesionZoom}`);
+      });
+    });
+    
+    setData(newData);
+    mostrarToast(`✅ Proceso completado:<br>
+      <b>${updatedCount}</b> filas actualizadas<br>
+      <b>${createdCount}</b> filas nuevas creadas`, "success");
+    alert(`✅ Completado:\n\n${updatedCount} filas autocompletadas\n${createdCount} filas nuevas creadas`);
+  } catch (error) {
+    mostrarToast(`❌ Error: ${error.message}`, "error");
+    alert("❌ Error: " + error.message);
+    console.error(error);
+  } finally {
+    setIsLoading(false);
+    event.target.value = "";
+  }
+};
+ 
+
 
   const handleFileUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
-
     const tempLoading = { isLoading: true };
     if (activeTab) updateActiveTab(tempLoading);
-
     try {
       const workbook = new ExcelJS.Workbook();
       const arrayBuffer = await file.arrayBuffer();
       await workbook.xlsx.load(arrayBuffer);
-      
+     
       const sheetNames = workbook.worksheets.map((sheet, index) => ({
         index,
         name: sheet.name
       }));
-      
+     
       const worksheet = workbook.worksheets[0];
       const { data: loadedData, headers: sheetHeaders } = loadSheetData(worksheet);
-      
+     
       // Crear nueva pestaña con el archivo
       createNewTab(file.name, {
         data: loadedData,
@@ -1163,7 +1353,7 @@ function App() {
         currentHeaders: sheetHeaders,
         sheetData: { 0: { data: loadedData, headers: sheetHeaders } }
       });
-      
+     
     } catch (error) {
       alert("Error al cargar el archivo: " + error.message);
       console.error(error);
@@ -1172,7 +1362,6 @@ function App() {
       event.target.value = "";
     }
   };
-
   const loadSheetData = (worksheet) => {
     const loadedData = [];
     let sheetHeaders = [];
@@ -1180,35 +1369,34 @@ function App() {
     const isMonitoreo = (worksheet.name || '').toLowerCase().includes('monitoreo');
     const MAX_SCAN_ROWS = isMonitoreo ? 10 : 3;
     const MAX_COLS = isMonitoreo ? 60 : 25;
-
     // Función auxiliar MUY ROBUSTA para extraer texto de celdas
     const extractCellText = (cell) => {
       if (!cell) return "";
-      
+     
       let rawValue = cell.value;
       if (rawValue === null || rawValue === undefined) return "";
-      
+     
       if (typeof rawValue === 'string') {
         return rawValue.trim();
       }
-      
+     
       if (typeof rawValue === 'number') {
         return String(rawValue);
       }
-      
+     
       if (typeof rawValue === 'object') {
         if (rawValue.hyperlink && rawValue.text) {
           return String(rawValue.text).trim();
         }
-        
+       
         if (Array.isArray(rawValue.richText)) {
           return rawValue.richText.map(rt => rt.text || '').join('').trim();
         }
-        
+       
         if (rawValue.text !== undefined) {
           return String(rawValue.text).trim();
         }
-        
+       
         if (rawValue.result !== undefined) {
           const res = rawValue.result;
           if (res instanceof Date) {
@@ -1221,10 +1409,9 @@ function App() {
         }
         return '';
       }
-      
+     
       return String(rawValue).trim();
     };
-
     // Función SÚPER SIMPLE: leer TODO directamente sin filtros
     const readAllCellsInRow = (row, maxCols = 30) => {
       const cells = [];
@@ -1235,47 +1422,46 @@ function App() {
       }
       return cells;
     };
-
     console.log('🔍 DETECTANDO ENCABEZADOS - MODO SIMPLE Y DIRECTO');
-    
-    let bestRowNum = -1; let bestCount = 0; let bestKeywordRowNum = -1; let bestKeywordCount = 0; 
+   
+    let bestRowNum = -1; let bestCount = 0; let bestKeywordRowNum = -1; let bestKeywordCount = 0;
     const headerKeywords = ['DOCENTE','CURSO','SECCION','SECCIÓN','SESION','HORA INICIO','HORA FIN','FECHA','DIA','COLUMNA 13'];
-    
+   
     // MÉTODO 1: Leer directamente las primeras filas SIN filtros
     for (let rowNum = 1; rowNum <= MAX_SCAN_ROWS; rowNum++) {
       console.log(`\n📋 === FILA ${rowNum} ===`);
-      
+     
       const row = worksheet.getRow(rowNum);
       const allCells = readAllCellsInRow(row, MAX_COLS);
-      
+     
       // Mostrar TODO lo que encuentra
       allCells.forEach((cellText, index) => {
         if (cellText && cellText.trim() !== '') {
-          console.log(`   Col ${index + 1}: "${cellText}"`);
+          console.log(` Col ${index + 1}: "${cellText}"`);
         }
       });
-      
+     
       // Contar celdas con contenido real
       const nonEmptyCells = allCells.filter(cell => cell && cell.trim() !== '').length;
-      console.log(`   📊 Total celdas con contenido: ${nonEmptyCells}`);
+      console.log(` 📊 Total celdas con contenido: ${nonEmptyCells}`);
       if (isMonitoreo && nonEmptyCells > bestCount) { bestCount = nonEmptyCells; bestRowNum = rowNum; }
-      
+     
       // Conteo de palabras clave típicas de MONITOREO
       const upperCells = allCells.map(c => (c || '').toString().toUpperCase().trim());
       const matchCount = headerKeywords.reduce((acc, k) => acc + (upperCells.includes(k) ? 1 : 0), 0);
       if (isMonitoreo && matchCount > bestKeywordCount) { bestKeywordCount = matchCount; bestKeywordRowNum = rowNum; }
-      
+     
       // Si tiene un número razonable de celdas con contenido, usar esta fila
       if (nonEmptyCells >= 5) {
         headerRowIndex = rowNum;
         console.log(`✅ SELECCIONANDO FILA ${rowNum} COMO ENCABEZADOS`);
-        
+       
         // Filtrar solo las celdas vacías del final
         let validHeaders = [...allCells];
         while (validHeaders.length > 0 && (!validHeaders[validHeaders.length - 1] || validHeaders[validHeaders.length - 1].trim() === '')) {
           validHeaders.pop();
         }
-        
+       
         // Usar los textos reales, sin cambiarlos
         sheetHeaders = validHeaders.map((header, index) => {
           if (header && header.trim() !== '') {
@@ -1284,12 +1470,11 @@ function App() {
             return `COLUMNA_${index + 1}`;
           }
         });
-        
+       
         console.log(`📋 ENCABEZADOS FINALES:`, sheetHeaders);
         break;
       }
     }
-
     // Ajuste adicional (MONITOREO): si detectamos una fila con palabras clave típicas, úsala como encabezados
     if (isMonitoreo && bestKeywordRowNum > 0) {
       const headersUpper = sheetHeaders.map(h => (h || '').toString().toUpperCase());
@@ -1305,7 +1490,7 @@ function App() {
         headerRowIndex = bestKeywordRowNum;
       }
     }
-    
+   
     // FALLBACK: Si no encontró nada en el método 1, intentar con la mejor fila detectada para MONITOREO
     if (sheetHeaders.length === 0 && isMonitoreo && bestRowNum > 0) {
       const bestRow = worksheet.getRow(bestRowNum);
@@ -1317,22 +1502,22 @@ function App() {
       sheetHeaders = validHeaders.map((header, index) => header && header.trim() !== '' ? header.trim() : `COLUMNA_${index + 1}`);
       headerRowIndex = bestRowNum;
     }
-    
+   
     // FALLBACK: Si no encontró nada, usar la primera fila que tenga cualquier dato
     if (sheetHeaders.length === 0) {
       console.log('⚠️ FALLBACK: Buscando cualquier fila con datos...');
-      
+     
       for (let i = 1; i <= (isMonitoreo ? 10 : 5); i++) {
-        console.log(`   Probando fila ${i}...`);
+        console.log(` Probando fila ${i}...`);
         const row = worksheet.getRow(i);
         const cells = readAllCellsInRow(row, MAX_COLS);
         const nonEmpty = cells.filter(c => c && c.trim() !== '');
-        
+       
         if (nonEmpty.length > 0) {
-          console.log(`   ✅ Encontré ${nonEmpty.length} celdas en fila ${i}`);
+          console.log(` ✅ Encontré ${nonEmpty.length} celdas en fila ${i}`);
           headerRowIndex = i;
           sheetHeaders = cells.map((cell, idx) => cell || `COLUMNA_${idx + 1}`);
-          
+         
           // Limpiar headers vacíos del final
           while (sheetHeaders.length > 0 && sheetHeaders[sheetHeaders.length - 1].startsWith('COLUMNA_')) {
             sheetHeaders.pop();
@@ -1340,7 +1525,7 @@ function App() {
           break;
         }
       }
-      
+     
       // Último recurso extremo
       if (sheetHeaders.length === 0) {
         console.log('💥 ÚLTIMO RECURSO: Creando headers genéricos');
@@ -1348,12 +1533,11 @@ function App() {
         headerRowIndex = 1;
       }
     }
-
     console.log(`🎯 RESULTADO FINAL:`);
     console.log(`📄 Hoja: ${worksheet.name}`);
     console.log(`📏 Fila de encabezados: ${headerRowIndex}`);
     console.log(`📋 Encabezados detectados (${sheetHeaders.length}):`, sheetHeaders);
-    
+   
     // Verificar si tenemos headers reales o genéricos
     const genericHeaders = sheetHeaders.filter(h => h && h.startsWith('COLUMNA_')).length;
     if (genericHeaders > sheetHeaders.length / 2) {
@@ -1361,17 +1545,13 @@ function App() {
     } else {
       console.log('✅ Headers reales detectados correctamente');
     }
-
     console.log(`\n🗂️ LEYENDO DATOS desde fila ${headerRowIndex + 1}...`);
     const maxRowsToCheck = Math.min(worksheet.rowCount || 1000, 1000);
-
     // ⭐ FUNCIÓN getCellValue - CORREGIDA
     const getCellValue = (cell, columnIndex) => {
       if (!cell || cell.value === null || cell.value === undefined) return "";
-
       const rawValue = cell.value;
       const headerName = sheetHeaders[columnIndex - 1];
-
       // Números específicos solo para SESION (no tocar tiempos ni duraciones)
       if (headerName && ['SESION'].includes(headerName.toUpperCase())) {
         if (typeof rawValue === 'number') {
@@ -1395,18 +1575,15 @@ function App() {
           return "";
         }
       }
-
       // Fechas
       if (rawValue instanceof Date) {
         const year = rawValue.getUTCFullYear();
         const hours = rawValue.getUTCHours();
         const minutes = rawValue.getUTCMinutes();
         const seconds = rawValue.getUTCSeconds();
-
         if (year === 1899 || year === 1900) {
           return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
         }
-
         if (hours !== 0 || minutes !== 0 || seconds !== 0) {
           return `${rawValue.toLocaleDateString('es-ES', {
             day: '2-digit',
@@ -1421,17 +1598,14 @@ function App() {
           });
         }
       }
-
       // Números
       if (typeof rawValue === 'number') {
         if (cell.numFmt && cell.numFmt.includes('%')) {
           return Math.round(rawValue * 100) + '%';
         }
-
         const cellFormat = (cell.numFmt || '').toLowerCase();
         const isTimeFormat = cellFormat.includes('h:mm') || cellFormat.includes('hh:mm') || cellFormat.includes('[h]') || cellFormat.includes('h:mm:ss') || cellFormat.includes('hh:mm:ss') || cellFormat.includes('am/pm') || cellFormat.includes('a/p');
         const isDateFormat = cellFormat.includes('d/m') || cellFormat.includes('dd/mm') || cellFormat.includes('m/d') || cellFormat.includes('yyyy') || cellFormat.includes('dd-mm') || cellFormat.includes('mm-dd');
-
         if (rawValue >= 0 && rawValue < 1 && (!isDateFormat || isTimeFormat)) {
           const totalSeconds = Math.round(rawValue * 24 * 60 * 60);
           const hours = Math.floor(totalSeconds / 3600);
@@ -1439,7 +1613,6 @@ function App() {
           const seconds = totalSeconds % 60;
           return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
         }
-
         if (rawValue >= 1 && rawValue < 100000) {
           try {
             const excelDate = new Date((rawValue - 25569) * 86400 * 1000);
@@ -1458,7 +1631,6 @@ function App() {
         }
         return String(rawValue);
       }
-
       // Objetos complejos (manejar correctamente resultados de fórmulas y tiempos)
       if (typeof rawValue === 'object') {
         if (rawValue.hyperlink) {
@@ -1536,7 +1708,6 @@ function App() {
         console.warn(`⚠️ Objeto no procesado en columna "${headerName}":`, rawValue);
         return "";
       }
-
       // Strings
       const stringValue = String(rawValue).trim();
       const datePatterns = [/(\d{1,2}\/\d{1,2}\/\d{4})/, /(\d{1,2}-\d{1,2}-\d{4})/, /(\d{4}-\d{1,2}-\d{1,2})/];
@@ -1550,12 +1721,10 @@ function App() {
       if (stringValue.length > 100) return stringValue.substring(0, 97) + '...';
       return stringValue;
     };
-
     for (let rowIndex = headerRowIndex + 1; rowIndex <= maxRowsToCheck; rowIndex++) {
       const row = worksheet.getRow(rowIndex);
       const rowData = {};
       let hasData = false;
-
       sheetHeaders.forEach((header, colIndex) => {
         const cell = row.getCell(colIndex + 1);
         const cellValue = getCellValue(cell, colIndex + 1);
@@ -1565,30 +1734,24 @@ function App() {
           hasData = true;
         }
       });
-
       if (hasData) {
         loadedData.push(rowData);
       }
     }
-
     console.log(`Total de registros cargados: ${loadedData.length}`);
     if (loadedData.length > 0) {
       console.log("Primera fila cargada:", loadedData[0]);
       console.log("Encabezados finales:", sheetHeaders);
     }
-
     return { data: loadedData, headers: sheetHeaders };
   };
-
   const handleSheetChange = (sheetIndex) => {
     if (!workbookData) {
       alert("Por favor, carga primero un archivo Excel");
       return;
     }
-
     const cache = activeTab?.sheetData || {};
     const prevSheetData = activeTab?.sheetData || {};
-
     // Usar caché si existe para esta hoja
     if (cache[sheetIndex]) {
       const headers = cache[sheetIndex].headers || [];
@@ -1602,11 +1765,9 @@ function App() {
       });
       return;
     }
-
     // Si no hay caché, leer del workbook
     const worksheet = workbookData.worksheets[sheetIndex];
     const { data: loadedData, headers: sheetHeaders } = loadSheetData(worksheet);
-
     // Guardar en caché y actualizar estado en un solo paso
     const updatedSheetData = { ...prevSheetData, [sheetIndex]: { data: loadedData, headers: sheetHeaders } };
     updateActiveTab({
@@ -1616,25 +1777,20 @@ function App() {
       sheetData: updatedSheetData
     });
   };
-
   const exportToExcel = async () => {
     if (data.length === 0) {
       alert('No hay datos para exportar.');
       return;
     }
-
     // Crear un workbook NUEVO (sin clonar, ya que ExcelJS no tiene .clone() nativo)
     const workbook = new ExcelJS.Workbook();
     const sheetDataCache = activeTab?.sheetData || {};
     const availableSheetsList = availableSheets || [{ index: 0, name: 'Monitoreo' }]; // Fallback para single sheet
-
     availableSheetsList.forEach(({ index: sheetIndex, name: sheetName }) => {
       // Crear worksheet nuevo con nombre original
       const worksheet = workbook.addWorksheet(sheetName || `Hoja${sheetIndex + 1}`);
-
       let sheetHeaders = [];
       let sheetDataToExport = [];
-
       // Verificar si hay caché para esta hoja específica
       if (sheetDataCache[sheetIndex]) {
         // Usar datos cacheados (incluye modificaciones y filas agregadas)
@@ -1657,7 +1813,6 @@ function App() {
           console.warn(`⚠️ No se pudo cargar hoja "${sheetName}" - sin workbookData`);
         }
       }
-
       // Agregar headers si existen
       if (sheetHeaders.length > 0) {
         const headerRow = worksheet.addRow(sheetHeaders);
@@ -1687,13 +1842,11 @@ function App() {
           };
         });
       }
-
       // Agregar filas de datos con cambios aplicados
       sheetDataToExport.forEach((row, rowIdx) => {
         const rowData = sheetHeaders.map(h => row[h] !== undefined ? row[h] : "");
         const excelRow = worksheet.addRow(rowData);
         excelRow.height = 25;
-
         const isEven = (rowIdx + 2) % 2 === 0; // +2 porque fila 1 es header
         excelRow.eachCell((cell) => {
           cell.fill = {
@@ -1718,7 +1871,6 @@ function App() {
           };
         });
       });
-
       // Ajustar anchos de columnas dinámicamente
       if (sheetHeaders.length > 0) {
         const dynamicWidths = sheetHeaders.map(() => Math.min(50, Math.max(10, 15)));
@@ -1728,7 +1880,6 @@ function App() {
         }));
       }
     });
-
     // Generar y descargar el archivo
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
@@ -1742,11 +1893,9 @@ function App() {
     link.click();
     document.body.removeChild(link);
     window.URL.revokeObjectURL(url);
-
     console.log(`✅ Exportado ${availableSheetsList.length} hojas con datos específicos por hoja.`);
     alert(`✅ ¡Archivo exportado exitosamente con ${availableSheetsList.length} hoja(s) y datos únicos por hoja!`);
   };
-
   const deleteRow = (index) => {
     // Mapear índice visible a índice real cuando MONITOREO reordena filas por DOCENTE
     let realIndex = index;
@@ -1763,11 +1912,10 @@ function App() {
       groups.forEach(list => list.forEach(item => flat.push(item)));
       realIndex = flat[index]?.idx ?? index;
     }
-    
+   
     const newData = data.filter((_, i) => i !== realIndex);
     setData(newData);
   };
-
   const handleCellChange = (rowIndex, columnName, value) => {
     // Mapear índice visible a índice real cuando MONITOREO reordena filas por DOCENTE
     let realIndex = rowIndex;
@@ -1784,12 +1932,10 @@ function App() {
       groups.forEach(list => list.forEach(item => flat.push(item)));
       realIndex = flat[rowIndex]?.idx ?? rowIndex;
     }
-
     const newData = [...data];
     newData[realIndex][columnName] = value;
     setData(newData);
   };
-
   // ===== DATOS COMPUTADOS =====
   // Generar opciones dinámicas desde los datos
   const uniqueCursos = useMemo(() => {
@@ -1801,7 +1947,6 @@ function App() {
     });
     return Array.from(cursos).sort();
   }, [data]);
-
   const uniqueSecciones = useMemo(() => {
     const secciones = new Set();
     data.forEach(row => {
@@ -1811,7 +1956,6 @@ function App() {
     });
     return Array.from(secciones).sort();
   }, [data]);
-
   const uniqueTurnos = useMemo(() => {
     const turnos = new Set();
     data.forEach(row => {
@@ -1821,7 +1965,6 @@ function App() {
     });
     return Array.from(turnos).sort();
   }, [data]);
-
   const uniqueDias = useMemo(() => {
     const dias = new Set();
     data.forEach(row => {
@@ -1831,7 +1974,6 @@ function App() {
     });
     return Array.from(dias).sort();
   }, [data]);
-
   const uniqueModelos = useMemo(() => {
     const modelos = new Set();
     data.forEach(row => {
@@ -1841,7 +1983,6 @@ function App() {
     });
     return Array.from(modelos).sort();
   }, [data]);
-
   const uniqueModalidades = useMemo(() => {
     const modalidades = new Set();
     data.forEach(row => {
@@ -1851,7 +1992,6 @@ function App() {
     });
     return Array.from(modalidades).sort();
   }, [data]);
-
   const uniqueCiclos = useMemo(() => {
     const ciclos = new Set();
     data.forEach(row => {
@@ -1861,7 +2001,6 @@ function App() {
     });
     return Array.from(ciclos).sort();
   }, [data]);
-
   const uniquePeriodos = useMemo(() => {
     const periodos = new Set();
     data.forEach(row => {
@@ -1871,10 +2010,8 @@ function App() {
     });
     return Array.from(periodos).sort();
   }, [data]);
-
   const selectedSheetName = (availableSheets[selectedSheet]?.name || '').toString();
   const isMonitoreoView = selectedSheetName.toLowerCase().includes('monitoreo');
-
   const dropdownOptions = {
     MODELO: uniqueModelos.length > 0 ? uniqueModelos : [],
     MODALIDAD: uniqueModalidades.length > 0 ? uniqueModalidades : [],
@@ -1885,26 +2022,28 @@ function App() {
     CICLO: uniqueCiclos.length > 0 ? uniqueCiclos : [],
     PERIODO: uniquePeriodos.length > 0 ? uniquePeriodos : []
   };
-
   const displayData = useMemo(() => {
-    // MONITOREO sin docente seleccionado: agrupar por DOCENTE respetando el orden original del Excel
-    if (isMonitoreoView) {
-      const groups = new Map();
-      data.forEach((row) => {
-        const docenteKey = (row.DOCENTE ?? '').toString();
-        if (!groups.has(docenteKey)) groups.set(docenteKey, []);
-        groups.get(docenteKey).push(row);
-      });
-      const ordered = [];
-      groups.forEach((rows) => {
-        ordered.push(...rows);
-      });
-      return ordered;
-    }
-
-    return data;
-  }, [data, isMonitoreoView]);
-
+  // Si hay un docente aleatorio seleccionado, filtramos por ese docente
+  if (randomDocente) {
+    return data.filter(row => row.DOCENTE === randomDocente);
+  }
+  
+  // MONITOREO sin docente seleccionado: agrupar por DOCENTE respetando el orden original del Excel
+  if (isMonitoreoView) {
+    const groups = new Map();
+    data.forEach((row) => {
+      const docenteKey = (row.DOCENTE ?? '').toString();
+      if (!groups.has(docenteKey)) groups.set(docenteKey, []);
+      groups.get(docenteKey).push(row);
+    });
+    const ordered = [];
+    groups.forEach((rows) => {
+      ordered.push(...rows);
+    });
+    return ordered;
+  }
+  return data;
+}, [data, isMonitoreoView, randomDocente]);
   // ===== RENDER =====
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-4">
@@ -1949,23 +2088,26 @@ function App() {
             />
           </div>
         </div>
-
         {/* CONTENIDO DE LA PESTAÑA ACTIVA */}
         {activeTab ? (
           <>
             <ControlPanel
-              onExport={exportToExcel}
-              onLoadExcel={handleFileUpload}
-              onLoadZoomCsv={handleZoomCsvUpload}
-              isLoading={isLoading}
-              displayDataLength={displayData.length}
-              displayData={displayData}
-              availableSheets={availableSheets}
-              selectedSheet={selectedSheet}
-              onSheetChange={handleSheetChange}
-              onAutocompletarConZoom={handleAutocompletarConZoom}
-            />
-
+  onExport={exportToExcel}
+  onLoadExcel={handleFileUpload}
+  onLoadZoomCsv={handleZoomCsvUpload}
+  isLoading={isLoading}
+  displayDataLength={displayData.length}
+  displayData={displayData}
+  availableSheets={availableSheets}
+  selectedSheet={selectedSheet}
+  onSheetChange={handleSheetChange}
+  onAutocompletarConZoom={handleAutocompletarConZoom}
+  onSelectRandomDocente={selectRandomDocente}
+  randomDocente={randomDocente}
+  onClearRandomDocente={() => setRandomDocente(null)}
+  onSaveBackup={saveBackup}
+  onOpenBackupModal={() => setIsBackupModalOpen(true)}
+/>
             <DataTable
               data={displayData}
               headers={currentHeaders.length > 0 ? currentHeaders : []}
@@ -1984,9 +2126,19 @@ function App() {
             </p>
           </div>
         )}
+
+        {/* Modal para historial de backups - MOVIDO AQUÍ DENTRO */}
+      <BackupHistoryModal
+        isOpen={isBackupModalOpen}
+        onClose={() => setIsBackupModalOpen(false)}
+        backups={backupHistory}
+        onDownload={downloadBackup}
+        onDelete={deleteBackup}
+      />
+
+
       </div>
-    </div>
+    </div>    
   );
 }
-
 export default App;
