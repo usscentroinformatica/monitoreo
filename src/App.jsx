@@ -2743,7 +2743,7 @@ const handleZoomCsvUpload = async (event) => {
             </p>
             <div className="mt-8 flex flex-col items-center gap-2">
               <span className="font-semibold text-gray-700 mb-2">Descarga las plantillas:</span>
-              <a href="/EJEMPLO.xlsx" download className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-bold shadow">Descargar plantilla Excel</a>
+              <a href="/EJEMPLO (2).xlsx" download className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-bold shadow">Descargar plantilla Excel</a>
               <a href="/meetings_Docentes_CIS_2025_09_08_2025_09_21.csv" download className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold shadow">Descargar reporte Zoom</a>
               {/* Guía paso a paso debajo de los botones de descarga */}
               <div className="w-full max-w-4xl mt-6">
