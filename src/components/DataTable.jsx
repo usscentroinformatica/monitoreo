@@ -180,22 +180,36 @@ const TableCell = memo(({ header, value, rowIndex, dropdownOptions = {}, onCellC
   const hasDropdown = dropdownOptions?.[header];
   const hasValue = value && String(value).trim() !== "";
 
+  const hNorm = String(header || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+  const isEfficiency = hNorm.includes('EFICIENCIA');
+  let cellBg = undefined;
+  if (isEfficiency) {
+    const raw = String(value ?? '').trim();
+    const numMatch = raw.match(/(\d+(?:[.,]\d+)?)/);
+    const num = numMatch ? parseFloat(numMatch[1].replace(',','.')) : NaN;
+    if (Number.isFinite(num)) {
+      if (num <= 79) cellBg = '#fee2e2';
+      else if (num >= 80) cellBg = '#dcfce7';
+    }
+  }
+
   return (
-    <td className="px-1 py-1 border border-gray-300">
+    <td className="px-1 py-1 border border-gray-300" style={{ backgroundColor: cellBg }}>
       {hasDropdown ? (
         hasValue ? (
           <select
             value={value || ""}
             onChange={handleChange}
-            className="w-full px-2 py-1 text-center bg-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 rounded appearance-none cursor-pointer hover:bg-blue-50 transition-colors"
-            style={{ 
-              minWidth: '100px',
-              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23888' d='M5 7L1 3h8z'/%3E%3C/svg%3E")`,
-              backgroundRepeat: 'no-repeat',
-              backgroundPosition: 'right 6px center',
-              paddingRight: '24px'
-            }}
-          >
+          className={`w-full px-2 py-1 text-center ${isEfficiency ? '' : 'bg-transparent focus:bg-white hover:bg-blue-50'} focus:outline-none focus:ring-2 focus:ring-blue-400 rounded appearance-none cursor-pointer transition-colors`}
+          style={{ 
+            minWidth: '100px',
+            backgroundColor: cellBg,
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23888' d='M5 7L1 3h8z'/%3E%3C/svg%3E")`,
+            backgroundRepeat: 'no-repeat',
+            backgroundPosition: 'right 6px center',
+            paddingRight: '24px'
+          }}
+        >
             <option value=""></option>
             {(dropdownOptions[header] || []).map((option) => (
               <option key={option} value={option}>{option}</option>
@@ -207,8 +221,8 @@ const TableCell = memo(({ header, value, rowIndex, dropdownOptions = {}, onCellC
               list={`list-${header}`}
               value={value || ""}
               onChange={handleChange}
-              className="w-full px-2 py-1 text-center bg-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 rounded appearance-none hover:bg-blue-50 transition-colors"
-              style={{ minWidth: '100px' }}
+              className={`w-full px-2 py-1 text-center ${isEfficiency ? '' : 'bg-transparent focus:bg-white hover:bg-blue-50'} focus:outline-none focus:ring-2 focus:ring-blue-400 rounded appearance-none transition-colors`}
+              style={{ minWidth: '100px', backgroundColor: cellBg }}
             />
             <datalist id={`list-${header}`}>
               {(dropdownOptions[header] || []).map((option) => (
@@ -222,8 +236,8 @@ const TableCell = memo(({ header, value, rowIndex, dropdownOptions = {}, onCellC
           type="text"
           value={value || ""}
           onChange={handleChange}
-          className="w-full px-2 py-1 text-center bg-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 rounded appearance-none hover:bg-blue-50 transition-colors"
-          style={{ minWidth: '100px' }}
+          className={`w-full px-2 py-1 text-center ${isEfficiency ? '' : 'bg-transparent focus:bg-white hover:bg-blue-50'} focus:outline-none focus:ring-2 focus:ring-blue-400 rounded appearance-none transition-colors`}
+          style={{ minWidth: '100px', backgroundColor: cellBg }}
         />
       )}
     </td>
