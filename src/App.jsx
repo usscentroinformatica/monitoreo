@@ -584,10 +584,13 @@ const matchSecciones = (seccionExcel, seccionZoom) => {
           }
           const progStr = possibleProgramadoCols.map(c => dataProcesada[index][c]).find(v => v && String(v).trim() !== '');
           const progSec = durationToSeconds(progStr);
-          if (isFinite(progSec) && isFinite(durationSec) && isFinite(effectiveSec) && durationSec > 0) {
+          if (isFinite(durationSec) && isFinite(effectiveSec) && durationSec > 0) {
             const toleranceSec = 10 * 60;
-            const threshold = Math.max(progSec - toleranceSec, 0);
-            const numerator = Math.max(effectiveSec - threshold, 0);
+            let numerator = effectiveSec;
+            if (isFinite(progSec) && progSec > 0) {
+              const threshold = Math.max(progSec - toleranceSec, 0);
+              numerator = Math.max(effectiveSec - threshold, 0);
+            }
             const eficiencia = Math.min(numerator / durationSec, 1);
             const eficienciaStr = Number.isFinite(eficiencia) ? `${(eficiencia * 100).toFixed(2)}%` : '';
             for (const col of possibleEficienciaCols) {
@@ -703,13 +706,16 @@ const matchSecciones = (seccionExcel, seccionZoom) => {
           }
           const progStr = possibleProgramadoCols.map(c => row[c]).find(v => v && String(v).trim() !== '');
           const progSec = durationToSeconds(progStr);
-          if (isFinite(progSec) && isFinite(durationSec) && isFinite(effectiveSec) && durationSec > 0) {
+          if (isFinite(durationSec) && isFinite(effectiveSec) && durationSec > 0) {
             const toleranceSec = 10 * 60; // N1 = 00:10:00
-            const threshold = Math.max(progSec - toleranceSec, 0);
-            const numerator = Math.max(effectiveSec - threshold, 0);
-          const eficiencia = Math.min(numerator / durationSec, 1);
-          const eficienciaStr = Number.isFinite(eficiencia) ? `${(eficiencia * 100).toFixed(2)}%` : '';
-          setIfHasHeader(row, possibleEficienciaCols, eficienciaStr);
+            let numerator = effectiveSec;
+            if (isFinite(progSec) && progSec > 0) {
+              const threshold = Math.max(progSec - toleranceSec, 0);
+              numerator = Math.max(effectiveSec - threshold, 0);
+            }
+            const eficiencia = Math.min(numerator / durationSec, 1);
+            const eficienciaStr = Number.isFinite(eficiencia) ? `${(eficiencia * 100).toFixed(2)}%` : '';
+            setIfHasHeader(row, possibleEficienciaCols, eficienciaStr);
           }
           row.TURNO = row.TURNO && String(row.TURNO).trim() !== '' ? row.TURNO : detectTurno(fechaInicio);
           // Calcular SI/NO para "INICIO SESION 10 MINUTOS ANTES" usando hora programada original y el inicio Zoom
@@ -1170,10 +1176,13 @@ const handleZoomCsvUpload = async (event) => {
       // Calcular EFICIENCIA solo si hay tiempo programado y duración
       const progStr = possibleProgramadoCols.map(c => updatedRow[c] ?? row[c]).find(v => v && String(v).trim() !== '');
       const progSec = durationToSeconds(progStr);
-      if (isFinite(progSec) && isFinite(durationSec) && isFinite(effectiveSec) && durationSec > 0) {
+      if (isFinite(durationSec) && isFinite(effectiveSec) && durationSec > 0) {
         const toleranceSec = 10 * 60; // N1 = 00:10:00
-        const threshold = Math.max(progSec - toleranceSec, 0);
-        const numerator = Math.max(effectiveSec - threshold, 0);
+        let numerator = effectiveSec;
+        if (isFinite(progSec) && progSec > 0) {
+          const threshold = Math.max(progSec - toleranceSec, 0);
+          numerator = Math.max(effectiveSec - threshold, 0);
+        }
         const eficiencia = Math.min(numerator / durationSec, 1);
         const eficienciaStr = Number.isFinite(eficiencia) ? `${(eficiencia * 100).toFixed(2)}%` : '';
         for (const col of possibleEficienciaCols) {
@@ -1375,10 +1384,13 @@ const handleZoomCsvUpload = async (event) => {
             }
             const progStr = possibleProgramadoCols.map(c => updatedRow[c] ?? row[c]).find(v => v && String(v).trim() !== '');
             const progSec = durationToSeconds(progStr);
-            if (isFinite(progSec) && isFinite(durationSec) && isFinite(effectiveSec) && durationSec > 0) {
+            if (isFinite(durationSec) && isFinite(effectiveSec) && durationSec > 0) {
               const toleranceSec = 10 * 60;
-              const threshold = Math.max(progSec - toleranceSec, 0);
-              const numerator = Math.max(effectiveSec - threshold, 0);
+              let numerator = effectiveSec;
+              if (isFinite(progSec) && progSec > 0) {
+                const threshold = Math.max(progSec - toleranceSec, 0);
+                numerator = Math.max(effectiveSec - threshold, 0);
+              }
               const eficiencia = Math.min(numerator / durationSec, 1);
               const eficienciaStr = Number.isFinite(eficiencia) ? `${(eficiencia * 100).toFixed(2)}%` : '';
               for (const col of possibleEficienciaCols) {
@@ -1733,10 +1745,13 @@ const handleZoomCsvUpload = async (event) => {
         }
         const progStr = possibleProgramadoCols.map(c => newRow[c]).find(v => v && String(v).trim() !== '');
         const progSec = durationToSeconds(progStr);
-        if (isFinite(progSec) && isFinite(durationSec) && isFinite(effectiveSec) && durationSec > 0) {
+        if (isFinite(durationSec) && isFinite(effectiveSec) && durationSec > 0) {
           const toleranceSec = 10 * 60;
-          const threshold = Math.max(progSec - toleranceSec, 0);
-          const numerator = Math.max(effectiveSec - threshold, 0);
+          let numerator = effectiveSec;
+          if (isFinite(progSec) && progSec > 0) {
+            const threshold = Math.max(progSec - toleranceSec, 0);
+            numerator = Math.max(effectiveSec - threshold, 0);
+          }
           const eficiencia = Math.min(numerator / durationSec, 1);
           const eficienciaStr = Number.isFinite(eficiencia) ? `${(eficiencia * 100).toFixed(2)}%` : '';
           for (const col of possibleEficienciaCols) {
@@ -2464,29 +2479,43 @@ const handleZoomCsvUpload = async (event) => {
 
     // Recalcular en tiempo real: TIEMPO EFECTIVO DICTADO y EFICIENCIA
     const waitTimeAliases = [
-      'TIEMPO DE ESPERA ANTES DE INICIAR LA CLASE'
+      'TIEMPO DE ESPERA ANTES DE INICIAR LA CLASE',
+      'Tiempo de espera antes de iniciar la clase',
+      'TIEMPO DE ESPERA',
+      'Espera antes de iniciar'
     ];
     const effectiveTimeAliases = [
-      'TIEMPO EFECTIVO DICTADO'
+      'TIEMPO EFECTIVO DICTADO',
+      'Tiempo Efectivo Dictado',
+      'TIEMPO EFECTIVO DOCENTE',
+      'Tiempo efectivo docente'
     ];
     const zoomDurationAliases = [
       'FINALIZA LA CLASE (ZOOM)',
       'Hora Finalización Zoom',
-      'DURACIÓN TOTAL CLASE'
+      'DURACIÓN TOTAL CLASE',
+      'Duración total clase'
     ];
     const programmedTimeAliases = [
-      'TIEMPO PROGRAMADO'
+      'TIEMPO PROGRAMADO',
+      'Tiempo Programado',
+      'DURACIÓN PROGRAMADA',
+      'Duración Programada'
     ];
     const efficiencyAliases = [
-      'EFICIENCIA'
+      'EFICIENCIA',
+      'Eficiencia',
+      'INDICE EFICIENCIA',
+      'Índice de Eficiencia'
     ];
 
     const currentHeadersList = activeTab?.currentHeaders || [];
     const editedIsWaitTime = waitTimeAliases.includes(columnName);
     const editedIsZoomDuration = zoomDurationAliases.includes(columnName);
     const editedIsProgrammedTime = programmedTimeAliases.includes(columnName);
+    const editedIsEffectiveTime = effectiveTimeAliases.includes(columnName);
 
-    if (editedIsWaitTime || editedIsZoomDuration || editedIsProgrammedTime) {
+    if (editedIsWaitTime || editedIsZoomDuration || editedIsProgrammedTime || editedIsEffectiveTime) {
       const rowObj = newData[realIndex] || {};
 
       // Obtener duración total en segundos (desde Zoom o columna de duración)
@@ -2501,26 +2530,49 @@ const handleZoomCsvUpload = async (event) => {
         }
       }
 
-      // Obtener tiempo de espera en segundos (solo calcular si existe y es > 0)
-      let waitSec = 0;
+      let waitSec = NaN;
+      let waitProvided = false;
       for (const wCol of waitTimeAliases) {
         if (currentHeadersList.includes(wCol)) {
           const wRaw = (editedIsWaitTime && wCol === columnName) ? value : rowObj[wCol];
-          const sec = durationToSeconds(String(wRaw || '')) || 0;
-          if (sec && Number.isFinite(sec)) { waitSec = sec; }
+          const hasVal = String(wRaw || '').trim() !== '';
+          waitProvided = hasVal;
+          if (hasVal) {
+            const sec = durationToSeconds(String(wRaw));
+            if (Number.isFinite(sec)) { waitSec = sec; }
+          }
           break;
         }
       }
 
+      if (editedIsWaitTime && !waitProvided) {
+        for (const eCol of effectiveTimeAliases) {
+          if (currentHeadersList.includes(eCol)) { rowObj[eCol] = ''; break; }
+        }
+        for (const col of efficiencyAliases) {
+          if (currentHeadersList.includes(col)) { rowObj[col] = ''; break; }
+        }
+        setData(newData);
+        return;
+      }
+
       let effectiveSec = null;
-      if (durationSec > 0 && waitSec > 0) {
+      if (editedIsEffectiveTime) {
+        const sec = durationToSeconds(String(value || ''));
+        if (Number.isFinite(sec)) {
+          effectiveSec = sec;
+        } else {
+          for (const col of efficiencyAliases) {
+            if (currentHeadersList.includes(col)) { rowObj[col] = ''; break; }
+          }
+          setData(newData);
+          return;
+        }
+      } else if (durationSec > 0 && waitProvided && Number.isFinite(waitSec)) {
         effectiveSec = Math.max(durationSec - waitSec, 0);
         const effectiveStr = secondsToHHMMSS(effectiveSec);
         for (const eCol of effectiveTimeAliases) {
-          if (currentHeadersList.includes(eCol)) {
-            rowObj[eCol] = effectiveStr;
-            break;
-          }
+          if (currentHeadersList.includes(eCol)) { rowObj[eCol] = effectiveStr; break; }
         }
       }
 
@@ -2530,23 +2582,24 @@ const handleZoomCsvUpload = async (event) => {
         for (const pCol of programmedTimeAliases) {
           if (currentHeadersList.includes(pCol)) {
             const pRaw = (editedIsProgrammedTime && pCol === columnName) ? value : rowObj[pCol];
-            const sec = durationToSeconds(String(pRaw || '')) || 0;
-            if (sec && Number.isFinite(sec)) { programmedSec = sec; }
+            const hasP = String(pRaw || '').trim() !== '';
+            if (hasP) {
+              const sec = durationToSeconds(String(pRaw));
+              if (Number.isFinite(sec)) { programmedSec = sec; }
+            }
             break;
           }
         }
 
+        const toleranceSec = 10 * 60;
+        let numerator = effectiveSec;
         if (programmedSec > 0) {
-          const toleranceSec = 10 * 60; // 10 minutos
-          const numerator = Math.max(effectiveSec - Math.max(programmedSec - toleranceSec, 0), 0);
-          const eficiencia = Math.min(numerator / durationSec, 1);
-          const eficienciaStr = Number.isFinite(eficiencia) ? `${(eficiencia * 100).toFixed(2)}%` : '';
-          for (const col of efficiencyAliases) {
-            if (currentHeadersList.includes(col)) {
-              rowObj[col] = eficienciaStr;
-              break;
-            }
-          }
+          numerator = Math.max(effectiveSec - Math.max(programmedSec - toleranceSec, 0), 0);
+        }
+        const eficiencia = Math.min(numerator / durationSec, 1);
+        const eficienciaStr = Number.isFinite(eficiencia) ? `${(eficiencia * 100).toFixed(2)}%` : '';
+        for (const col of efficiencyAliases) {
+          if (currentHeadersList.includes(col)) { rowObj[col] = eficienciaStr; break; }
         }
       }
     }
@@ -2743,7 +2796,7 @@ const handleZoomCsvUpload = async (event) => {
             </p>
             <div className="mt-8 flex flex-col items-center gap-2">
               <span className="font-semibold text-gray-700 mb-2">Descarga las plantillas:</span>
-              <a href="/EJEMPLO.xlsx" download className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-bold shadow">Descargar plantilla Excel</a>
+              <a href="/EJEMPLO (2).xlsx" download className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-bold shadow">Descargar plantilla Excel</a>
               <a href="/meetings_Docentes_CIS_2025_09_08_2025_09_21.csv" download className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold shadow">Descargar reporte Zoom</a>
               {/* Guía paso a paso debajo de los botones de descarga */}
               <div className="w-full max-w-4xl mt-6">
