@@ -1136,7 +1136,6 @@ const handleZoomCsvUpload = async (event) => {
         }
       }
       
-      // Guardar duración de la grabación en FINALIZA LA CLASE (ZOOM)
       for (const col of possibleFinalizaCols) {
         if (currentHeaders.includes(col)) {
           updatedRow[col] = extractDuration(zoomRow);
@@ -1193,12 +1192,10 @@ const handleZoomCsvUpload = async (event) => {
         }
       }
       
-      // Calcular SI/NO para "INICIO SESION 10 MINUTOS ANTES" en base al horario programado vs inicio Zoom
       const possibleEarlyCols = ['INICIO SESION 10 MINUTOS ANTES', 'Inicio Sesion 10 minutos antes', 'INICIO SESIÓN 10 MINUTOS ANTES'];
       const horaProg = row['HORA INICIO'] || row['Hora Inicio'] || row['INICIO'] || row['inicio'] || '';
       const progMin = timeToMinutes(horaProg);
       const zoomMin = timeToMinutes(zoomInfo.horaInicio);
-      // Inferir hora programada si no existe en Excel, cuando el inicio está en los últimos 15 minutos de la hora
       const inferScheduledFromZoom = (zm) => {
         if (!isFinite(zm)) return NaN;
         const minute = Math.floor(zm % 60);
@@ -1217,6 +1214,24 @@ const handleZoomCsvUpload = async (event) => {
           updatedRow[col] = inicioAntes ? 'SI' : 'NO';
           break;
         }
+      }
+
+      const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+      const findHeader = (aliases) => {
+        for (const h of currentHeaders) {
+          const hN = norm(h);
+          for (const a of aliases) { if (hN === norm(a)) return h; }
+        }
+        return null;
+      };
+      const videoFlag = String((zoomRow && (zoomRow['Video'] || '')) || '')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .trim().toLowerCase();
+      if (videoFlag === 'no') {
+        const obsHeader = findHeader(['OBSERVACIÓN', 'OBSERVACION', 'Observación', 'Observacion']);
+        const recHeader = findHeader(['RECOMENDACIONES', 'Recomendaciones', 'RECOMENDACION', 'Recomendacion']);
+        if (obsHeader) updatedRow[obsHeader] = 'no activo camara';
+        if (recHeader) updatedRow[recHeader] = 'activar su camara';
       }
 
       updatedRow.CURSO = zoomInfo.curso;
@@ -1398,6 +1413,25 @@ const handleZoomCsvUpload = async (event) => {
                   updatedRow[col] = eficienciaStr;
                   break;
                 }
+              }
+            }
+            {
+              const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+              const findHeader = (aliases) => {
+                for (const h of currentHeaders) {
+                  const hN = norm(h);
+                  for (const a of aliases) { if (hN === norm(a)) return h; }
+                }
+                return null;
+              };
+              const videoFlagExact = String((zoomRow && (zoomRow['Video'] || '')) || '')
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .trim().toLowerCase();
+              if (videoFlagExact === 'no') {
+                const obsHeader = findHeader(['OBSERVACIÓN', 'OBSERVACION', 'Observación', 'Observacion']);
+                const recHeader = findHeader(['RECOMENDACIONES', 'Recomendaciones', 'RECOMENDACION', 'Recomendacion']);
+                if (obsHeader) updatedRow[obsHeader] = 'no activo camara';
+                if (recHeader) updatedRow[recHeader] = 'activar su camara';
               }
             }
             
@@ -1709,7 +1743,6 @@ const handleZoomCsvUpload = async (event) => {
           }
         }
         
-        // Guardar duración de la grabación en FINALIZA LA CLASE (ZOOM)
         for (const col of possibleFinalizaCols) {
           if (currentHeaders.includes(col)) {
             newRow[col] = extractDuration(zoomRow);
@@ -1762,7 +1795,6 @@ const handleZoomCsvUpload = async (event) => {
           }
         }
         
-        // Calcular SI/NO para "INICIO SESION 10 MINUTOS ANTES" tomando horario programado de una fila existente del mismo curso/sección
         const timeToMinutes = (timeStr) => {
           if (!timeStr || typeof timeStr !== 'string') return NaN;
           let s = timeStr.trim();
@@ -1803,6 +1835,24 @@ const handleZoomCsvUpload = async (event) => {
             newRow[col] = inicioAntes ? 'SI' : 'NO';
             break;
           }
+        }
+
+        const videoFlagNew = String((zoomRow && (zoomRow['Video'] || '')) || '')
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          .trim().toLowerCase();
+        const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+        const findHeader = (aliases) => {
+          for (const h of currentHeaders) {
+            const hN = norm(h);
+            for (const a of aliases) { if (hN === norm(a)) return h; }
+          }
+          return null;
+        };
+        if (videoFlagNew === 'no') {
+          const obsHeader = findHeader(['OBSERVACIÓN', 'OBSERVACION', 'Observación', 'Observacion']);
+          const recHeader = findHeader(['RECOMENDACIONES', 'Recomendaciones', 'RECOMENDACION', 'Recomendacion']);
+          if (obsHeader) newRow[obsHeader] = 'no activo camara';
+          if (recHeader) newRow[recHeader] = 'activar su camara';
         }
         
         newData.push(newRow);
