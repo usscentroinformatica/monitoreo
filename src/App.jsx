@@ -1290,8 +1290,62 @@ const handleZoomCsvUpload = async (event) => {
           const sesionMatch = row.SESION && parseInt(String(row.SESION)) === sesionZoom;
           
           if (cursoMatch && seccionMatch && sesionMatch) {
-            const fechaInicio = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
-            const fechaFin = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
+            const baseDate = extractDate(zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "");
+            const sameGroup = parsedZoomData.filter(z => {
+              const zDoc = z['Anfitrión'] || z['Host'] || "";
+              if (!matchDocente(docenteActual, zDoc)) return false;
+              const zTema = z['Tema'] || z['Topic'] || "";
+              const m = zTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z0-9]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
+              if (!m) return false;
+              const [, zCursoParte, zSeccionZoom, zSesionStr] = m;
+              const zCursoNorm = normalizeCursoName(zCursoParte.trim());
+              const zSesion = zSesionStr ? parseInt(zSesionStr) : 0;
+              if (normalizeCursoName(row.CURSO || "") !== zCursoNorm) return false;
+              if (!matchSecciones(row.SECCION || "", zSeccionZoom)) return false;
+              if (parseInt(String(row.SESION || 0)) !== zSesion) return false;
+              const zDate = extractDate(z['Hora de inicio'] || z['Start Time'] || "");
+              return zDate === baseDate;
+            });
+            const t2m = (t) => {
+              if (!t || typeof t !== 'string') return NaN;
+              let s = t.trim();
+              s = s.replace(/a\.?\s*m\.?|p\.?\s*m\.?/gi, (m) => m.toLowerCase().includes('a') ? 'AM' : 'PM');
+              const m12 = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)/i);
+              if (m12) {
+                let h = parseInt(m12[1])||0; const min = parseInt(m12[2])||0; const sec = parseInt(m12[3]||'0')||0; const p = m12[4].toUpperCase();
+                if (p === 'PM' && h !== 12) h += 12; if (p === 'AM' && h === 12) h = 0;
+                return h*60 + min + sec/60;
+              }
+              const m24 = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+              if (m24) { const h = parseInt(m24[1])||0; const min = parseInt(m24[2])||0; const sec = parseInt(m24[3]||'0')||0; return h*60 + min + sec/60; }
+              return NaN;
+            };
+            let earliestStartStr = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
+            let latestEndStr = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
+            let totalSec = durationToSeconds(extractDuration(zoomRow));
+            sameGroup.forEach(z => {
+              const sStr = z['Hora de inicio'] || z['Start Time'] || "";
+              const eStr = z['Hora de finalización'] || z['End Time'] || "";
+              if (isFinite(t2m(extractTime(sStr))) && isFinite(t2m(extractTime(earliestStartStr))) && t2m(extractTime(sStr)) < t2m(extractTime(earliestStartStr))) {
+                earliestStartStr = sStr;
+              }
+              if (isFinite(t2m(extractTime(eStr))) && isFinite(t2m(extractTime(latestEndStr))) && t2m(extractTime(eStr)) > t2m(extractTime(latestEndStr))) {
+                latestEndStr = eStr;
+              }
+              const dStr = extractDuration(z);
+              const dSec = durationToSeconds(dStr);
+              if (isFinite(dSec)) totalSec += dSec;
+            });
+            const aggRow = {
+              'Hora de inicio': earliestStartStr,
+              'Start Time': earliestStartStr,
+              'Hora de finalización': latestEndStr,
+              'End Time': latestEndStr,
+              'Duración (hh:mm:ss)': secondsToHHMMSS(totalSec)
+            };
+            
+            const fechaInicio = earliestStartStr || "";
+            const fechaFin = latestEndStr || "";
             
             const updatedRow = { ...row };
             
@@ -1365,7 +1419,7 @@ const handleZoomCsvUpload = async (event) => {
             const possibleFinalizaCols = ['FINALIZA LA CLASE (ZOOM)', 'Finaliza la Clase (Zoom)', 'Hora Finalización Zoom'];
             for (const col of possibleFinalizaCols) {
               if (currentHeaders.includes(col)) {
-                updatedRow[col] = extractDuration(zoomRow);
+                updatedRow[col] = extractDuration(aggRow);
                 break;
               }
             }
@@ -1376,7 +1430,7 @@ const handleZoomCsvUpload = async (event) => {
             const possibleProgramadoCols = ['TIEMPO PROGRAMADO', 'Tiempo Programado', 'DURACIÓN PROGRAMADA', 'Duración Programada'];
             const possibleEficienciaCols = ['EFICIENCIA', 'Eficiencia', 'INDICE EFICIENCIA', 'Índice de Eficiencia'];
             const possibleTotalCols = ['DURACIÓN TOTAL CLASE', 'Duración total clase'];
-            const zoomDurStr = extractDuration(zoomRow);
+            const zoomDurStr = extractDuration(aggRow);
             for (const col of possibleTotalCols) {
               if (currentHeaders.includes(col)) {
                 updatedRow[col] = zoomDurStr;
@@ -1508,8 +1562,45 @@ const handleZoomCsvUpload = async (event) => {
             continue;
           }
           
-          const fechaInicio = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
-          const fechaFin = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
+          const baseDate = extractDate(zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "");
+          const sameGroup = parsedZoomData.filter(z => {
+            const zDoc = z['Anfitrión'] || z['Host'] || "";
+            if (!matchDocente(docenteActual, zDoc)) return false;
+            const zTema = z['Tema'] || z['Topic'] || "";
+            const m = zTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z0-9]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
+            if (!m) return false;
+            const [, zCursoParte, zSeccionZoom, zSesionStr] = m;
+            const zCursoNorm = normalizeCursoName(zCursoParte.trim());
+            const zSesion = zSesionStr ? parseInt(zSesionStr) : 0;
+            if (normalizeCursoName(cursoZoom) !== zCursoNorm) return false;
+            if (!matchSecciones(seccionZoom, zSeccionZoom)) return false;
+            if (sesionZoom !== zSesion) return false;
+            const zDate = extractDate(z['Hora de inicio'] || z['Start Time'] || "");
+            return zDate === baseDate;
+          });
+          const t2m = (t) => {
+            if (!t || typeof t !== 'string') return NaN;
+            let s = t.trim();
+            s = s.replace(/a\.?\s*m\.?|p\.?\s*m\.?/gi, (m) => m.toLowerCase().includes('a') ? 'AM' : 'PM');
+            const m12 = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)/i);
+            if (m12) { let h = parseInt(m12[1])||0; const min = parseInt(m12[2])||0; const sec = parseInt(m12[3]||'0')||0; const p = m12[4].toUpperCase(); if (p==='PM' && h!==12) h+=12; if (p==='AM' && h===12) h=0; return h*60+min+sec/60; }
+            const m24 = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+            if (m24) { const h = parseInt(m24[1])||0; const min = parseInt(m24[2])||0; const sec = parseInt(m24[3]||'0')||0; return h*60+min+sec/60; }
+            return NaN;
+          };
+          let earliestStartStr = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
+          let latestEndStr = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
+          let totalSec = durationToSeconds(extractDuration(zoomRow));
+          sameGroup.forEach(z => {
+            const sStr = z['Hora de inicio'] || z['Start Time'] || "";
+            const eStr = z['Hora de finalización'] || z['End Time'] || "";
+            if (isFinite(t2m(extractTime(sStr))) && isFinite(t2m(extractTime(earliestStartStr))) && t2m(extractTime(sStr)) < t2m(extractTime(earliestStartStr))) earliestStartStr = sStr;
+            if (isFinite(t2m(extractTime(eStr))) && isFinite(t2m(extractTime(latestEndStr))) && t2m(extractTime(eStr)) > t2m(extractTime(latestEndStr))) latestEndStr = eStr;
+            const dSec = durationToSeconds(extractDuration(z)); if (isFinite(dSec)) totalSec += dSec;
+          });
+          const aggRow = { 'Hora de inicio': earliestStartStr, 'Start Time': earliestStartStr, 'Hora de finalización': latestEndStr, 'End Time': latestEndStr, 'Duración (hh:mm:ss)': secondsToHHMMSS(totalSec) };
+          const fechaInicio = earliestStartStr || "";
+          const fechaFin = latestEndStr || "";
           
           newData[index] = updateRowWithZoom(row, {
             curso: cursoZoom,
@@ -1517,7 +1608,7 @@ const handleZoomCsvUpload = async (event) => {
             horaInicio: extractTime(fechaInicio),
             horaFin: extractTime(fechaFin),
             turno: detectTurno(fechaInicio)
-          }, zoomRow);
+          }, aggRow);
           
           newData[index].CURSO = cursoZoom;
           newData[index].SECCION = seccionZoom;
@@ -1605,15 +1696,42 @@ const handleZoomCsvUpload = async (event) => {
             }
             if (!permitir) return; // No hay coincidencia por SECCIÓN, no actualizar
 
-            const fechaInicio = bestStartStr || "";
-            const fechaFin = bestEndStr || "";
+          const baseDate = extractDate(bestStartStr || "");
+          const temaStr2 = bestZoom['Tema'] || bestZoom['Topic'] || "";
+          const temaMatch2 = temaStr.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z0-9]+)/i);
+          const seccionZoom2 = temaMatch2 ? temaMatch2[2] : "";
+          const sameGroup = parsedZoomData.filter(z => {
+            const zDoc = z['Anfitrión'] || z['Host'] || "";
+            if (!matchDocente(docenteActual, zDoc)) return false;
+            const zTema = z['Tema'] || z['Topic'] || "";
+            const m = zTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z0-9]+)/i);
+            if (!m) return false;
+            const zSeccionZoom = m[2];
+            if (!matchSecciones(seccionZoom, zSeccionZoom)) return false;
+            const zDate = extractDate(z['Hora de inicio'] || z['Start Time'] || "");
+            return zDate === baseDate;
+          });
+          const t2m = (t) => { if (!t || typeof t !== 'string') return NaN; let s=t.trim(); s=s.replace(/a\.?\s*m\.?|p\.?\s*m\.?/gi,(m)=>m.toLowerCase().includes('a')?'AM':'PM'); const m12=s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)/i); if(m12){let h=parseInt(m12[1])||0; const min=parseInt(m12[2])||0; const sec=parseInt(m12[3]||'0')||0; const p=m12[4].toUpperCase(); if(p==='PM'&&h!==12) h+=12; if(p==='AM'&&h===12) h=0; return h*60+min+sec/60;} const m24=s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/); if(m24){ const h=parseInt(m24[1])||0; const min=parseInt(m24[2])||0; const sec=parseInt(m24[3]||'0')||0; return h*60+min+sec/60;} return NaN; };
+          let earliestStartStr = bestStartStr || "";
+          let latestEndStr = bestEndStr || "";
+          let totalSec = durationToSeconds(extractDuration(bestZoom));
+          sameGroup.forEach(z => {
+            const sStr = z['Hora de inicio'] || z['Start Time'] || "";
+            const eStr = z['Hora de finalización'] || z['End Time'] || "";
+            if (isFinite(t2m(extractTime(sStr))) && isFinite(t2m(extractTime(earliestStartStr))) && t2m(extractTime(sStr)) < t2m(extractTime(earliestStartStr))) earliestStartStr = sStr;
+            if (isFinite(t2m(extractTime(eStr))) && isFinite(t2m(extractTime(latestEndStr))) && t2m(extractTime(eStr)) > t2m(extractTime(latestEndStr))) latestEndStr = eStr;
+            const dSec = durationToSeconds(extractDuration(z)); if (isFinite(dSec)) totalSec += dSec;
+          });
+          const aggRow = { 'Hora de inicio': earliestStartStr, 'Start Time': earliestStartStr, 'Hora de finalización': latestEndStr, 'End Time': latestEndStr, 'Duración (hh:mm:ss)': secondsToHHMMSS(totalSec) };
+          const fechaInicio = earliestStartStr || "";
+          const fechaFin = latestEndStr || "";
             const updatedRow = updateRowWithZoom(row, {
               curso: row.CURSO || extractCursoFromTema(bestZoom['Tema'] || bestZoom['Topic'] || ""),
               fecha: extractDate(fechaInicio),
               horaInicio: extractTime(fechaInicio),
               horaFin: extractTime(fechaFin),
               turno: detectTurno(fechaInicio)
-            }, bestZoom);
+            }, aggRow);
             newData[index] = updatedRow;
             usedZoomByStart.add(bestStartStr);
             updatedCount++;
@@ -1705,8 +1823,30 @@ const handleZoomCsvUpload = async (event) => {
           return; // No crear si la sección de Zoom no coincide con alguna existente
         }
         
-        const fechaInicio = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
-        const fechaFin = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
+        const baseDate = extractDate(zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "");
+        const sameGroup = parsedZoomData.filter(z => {
+          const zDoc = z['Anfitrión'] || z['Host'] || "";
+          if (!matchDocente(docenteActual, zDoc)) return false;
+          const zTema = z['Tema'] || z['Topic'] || "";
+          const m = zTema.match(/(.+?)(?:(?:–|-|\/|:)\s*)(PEAD-[a-zA-Z0-9]+)(?:\s*(?:SESION|SESIÓN|Session|Sesión)\s*(\d+)?)?/i);
+          if (!m) return false;
+          const [, zCursoParte, zSeccionZoom, zSesionStr] = m;
+          const zCursoNorm = normalizeCursoName(zCursoParte.trim());
+          const zSesion = zSesionStr ? parseInt(zSesionStr) : 0;
+          if (normalizeCursoName(cursoZoom) !== zCursoNorm) return false;
+          if (seccionZoom.toUpperCase() !== zSeccionZoom.toUpperCase()) return false;
+          if (sesionZoom !== zSesion) return false;
+          const zDate = extractDate(z['Hora de inicio'] || z['Start Time'] || "");
+          return zDate === baseDate;
+        });
+        const t2m = (t) => { if (!t || typeof t !== 'string') return NaN; let s=t.trim(); s=s.replace(/a\.?\s*m\.?|p\.?\s*m\.?/gi,(m)=>m.toLowerCase().includes('a')?'AM':'PM'); const m12=s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)/i); if(m12){ let h=parseInt(m12[1])||0; const min=parseInt(m12[2])||0; const sec=parseInt(m12[3]||'0')||0; const p=m12[4].toUpperCase(); if(p==='PM'&&h!==12) h+=12; if(p==='AM'&&h===12) h=0; return h*60+min+sec/60;} const m24=s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/); if(m24){ const h=parseInt(m24[1])||0; const min=parseInt(m24[2])||0; const sec=parseInt(m24[3]||'0')||0; return h*60+min+sec/60;} return NaN; };
+        let earliestStartStr = zoomRow['Hora de inicio'] || zoomRow['Start Time'] || "";
+        let latestEndStr = zoomRow['Hora de finalización'] || zoomRow['End Time'] || "";
+        let totalSec = durationToSeconds(extractDuration(zoomRow));
+        sameGroup.forEach(z => { const sStr = z['Hora de inicio'] || z['Start Time'] || ""; const eStr = z['Hora de finalización'] || z['End Time'] || ""; if (isFinite(t2m(extractTime(sStr))) && isFinite(t2m(extractTime(earliestStartStr))) && t2m(extractTime(sStr)) < t2m(extractTime(earliestStartStr))) earliestStartStr = sStr; if (isFinite(t2m(extractTime(eStr))) && isFinite(t2m(extractTime(latestEndStr))) && t2m(extractTime(eStr)) > t2m(extractTime(latestEndStr))) latestEndStr = eStr; const dSec = durationToSeconds(extractDuration(z)); if (isFinite(dSec)) totalSec += dSec; });
+        const aggRow = { 'Hora de inicio': earliestStartStr, 'Start Time': earliestStartStr, 'Hora de finalización': latestEndStr, 'End Time': latestEndStr, 'Duración (hh:mm:ss)': secondsToHHMMSS(totalSec) };
+        const fechaInicio = earliestStartStr || "";
+        const fechaFin = latestEndStr || "";
         const newRow = {};
         currentHeaders.forEach(header => {
           newRow[header] = "";
@@ -1745,7 +1885,7 @@ const handleZoomCsvUpload = async (event) => {
         
         for (const col of possibleFinalizaCols) {
           if (currentHeaders.includes(col)) {
-            newRow[col] = extractDuration(zoomRow);
+            newRow[col] = extractDuration(aggRow);
             break;
           }
         }
@@ -1756,7 +1896,7 @@ const handleZoomCsvUpload = async (event) => {
         const possibleProgramadoCols = ['TIEMPO PROGRAMADO', 'Tiempo Programado', 'DURACIÓN PROGRAMADA', 'Duración Programada'];
         const possibleEficienciaCols = ['EFICIENCIA', 'Eficiencia', 'INDICE EFICIENCIA', 'Índice de Eficiencia'];
         const possibleTotalCols = ['DURACIÓN TOTAL CLASE', 'Duración total clase'];
-        const zoomDurStr = extractDuration(zoomRow);
+        const zoomDurStr = extractDuration(aggRow);
         for (const col of possibleTotalCols) {
           if (currentHeaders.includes(col)) {
             newRow[col] = zoomDurStr;
@@ -2848,10 +2988,6 @@ const handleZoomCsvUpload = async (event) => {
               <span className="font-semibold text-gray-700 mb-2">Descarga las plantillas:</span>
               <a href="/EJEMPLO (2).xlsx" download className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-bold shadow">Descargar plantilla Excel</a>
               <a href="/meetings_Docentes_CIS_2025_09_08_2025_09_21.csv" download className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold shadow">Descargar reporte Zoom</a>
-              {/* Guía paso a paso debajo de los botones de descarga */}
-              <div className="w-full max-w-4xl mt-6">
-                <Guide />
-              </div>
             </div>
           </div>
         )}
