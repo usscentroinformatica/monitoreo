@@ -2950,56 +2950,80 @@ const handleZoomCsvUpload = async (event) => {
         </div>
         {/* CONTENIDO DE LA PESTAÑA ACTIVA */}
         {activeTab ? (
-          <>
-            <ControlPanel
-  onExport={exportToExcel}
-  onLoadExcel={handleFileUpload}
-  onLoadZoomCsv={handleZoomCsvUpload}
-  isLoading={isLoading}
-  displayDataLength={displayData.length}
-  displayData={displayData}
-  availableSheets={availableSheets}
-  selectedSheet={selectedSheet}
-  onSheetChange={handleSheetChange}
-  onAutocompletarConZoom={handleAutocompletarConZoom}
-  onSelectRandomDocente={selectRandomDocente}
-  randomDocente={randomDocente}
-  onClearRandomDocente={() => setRandomDocente(null)}
-  onSaveBackup={saveBackup}
-  onOpenBackupModal={() => setIsBackupModalOpen(true)}
-/>
-            <DataTable
-              data={displayData}
-              headers={currentHeaders.length > 0 ? currentHeaders : []}
-              dropdownOptions={dropdownOptions}
-              onCellChange={handleCellChange}
-              onDeleteRow={deleteRow}
-            />
-          </>
-        ) : (
-          <div className="bg-white rounded-b-xl shadow-2xl p-12 text-center">
-            <h2 className="text-2xl font-bold text-gray-700 mb-6">
-              No hay archivos abiertos
-            </h2>
-            <p className="text-gray-500 mb-8">
-              Haz clic en "+ Nueva Pestaña" para cargar un archivo Excel
-            </p>
-            <div className="mt-8 flex flex-col items-center gap-2">
-              <span className="font-semibold text-gray-700 mb-2">Descarga las plantillas:</span>
-              <a href="/EJEMPLO (2).xlsx" download className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-bold shadow">Descargar plantilla Excel</a>
-              <a href="/meetings_Docentes_CIS_2025_09_08_2025_09_21.csv" download className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold shadow">Descargar reporte Zoom</a>
-            </div>
-          </div>
-        )}
+  <>
+    <ControlPanel
+      onExport={exportToExcel}
+      onLoadExcel={handleFileUpload}
+      onLoadZoomCsv={handleZoomCsvUpload}
+      isLoading={isLoading}
+      displayDataLength={displayData.length}
+      displayData={displayData}
+      availableSheets={availableSheets}
+      selectedSheet={selectedSheet}
+      onSheetChange={handleSheetChange}
+      onAutocompletarConZoom={handleAutocompletarConZoom}
+      onSelectRandomDocente={selectRandomDocente}
+      randomDocente={randomDocente}
+      onClearRandomDocente={() => setRandomDocente(null)}
+      onSaveBackup={saveBackup}
+      onOpenBackupModal={() => setIsBackupModalOpen(true)}
+    />
+    <DataTable
+      data={displayData}
+      headers={currentHeaders.length > 0 ? currentHeaders : []}
+      dropdownOptions={dropdownOptions}
+      onCellChange={handleCellChange}
+      onDeleteRow={deleteRow}
+    />
+  </>
+) : (
+  <div className="bg-white rounded-b-xl shadow-2xl p-12 text-center">
+    <h2 className="text-2xl font-bold text-gray-700 mb-6">
+      No hay archivos abiertos
+    </h2>
+    <p className="text-gray-500 mb-8">
+      Haz clic en "+ Nueva Pestaña" para cargar un archivo Excel
+    </p>
+    <div className="mt-8 flex flex-col items-center gap-2">
+      <span className="font-semibold text-gray-700 mb-2">Descarga las plantillas:</span>
+      
+      {/* BOTÓN NUEVO PARA LA GUÍA PDF */}
+      <a 
+        href="/guia monitoreo.pdf" 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 font-bold shadow w-64 text-center"
+      >
+        📘 Ver Guía de Monitoreo (PDF)
+      </a>
+      
+      <a 
+        href="/EJEMPLO (2).xlsx" 
+        download 
+        className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-bold shadow w-64 text-center"
+      >
+        📥 Descargar plantilla Excel
+      </a>
+      
+      <a 
+        href="/meetings_Docentes_CIS_2025_09_08_2025_09_21.csv" 
+        download 
+        className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-bold shadow w-64 text-center"
+      >
+        📊 Descargar reporte Zoom
+      </a>
+    </div>
+  </div>
+)}
 
-        {/* Modal para historial de backups - MOVIDO AQUÍ DENTRO */}
+{/* Modal para historial de backups - MOVIDO AQUÍ DENTRO */}
 <BackupHistoryModal
   isOpen={isBackupModalOpen}
   onClose={() => setIsBackupModalOpen(false)}
   backups={backupHistory}
   onDownload={downloadBackup}
   onDelete={deleteBackup}
-  onRestore={handleRestoreBackup}  // ✅ AGREGAR ESTA LÍNEA
+  onRestore={handleRestoreBackup}
 />
 
 
