@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Guía de Usuario - Sistema de Monitoreo USS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: Segoe UI, Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; color: #0f172a; margin: 0; }
+    .container { max-width: 920px; margin: 0 auto; padding: 32px; }
+    h1, h2, h3 { color: #0b3b8c; margin: 24px 0 12px; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 22px; }
+    h3 { font-size: 18px; }
+    p { margin: 10px 0; }
+    ul { margin: 8px 0 16px 20px; }
+    li { margin: 6px 0; }
+    code, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background: #f1f5f9; padding: 1px 6px; border-radius: 6px; font-size: 90%; }
+    .callout { background: #eff6ff; border: 1px solid #bfdbfe; padding: 12px 14px; border-radius: 8px; }
+    .muted { color: #475569; }
+    .hr { height: 1px; background: #e2e8f0; border: 0; margin: 20px 0; }
+    .small { font-size: 90%; }
+    @media print { .container { padding: 0; } .callout { border-color: #cbd5e1; } }
+  </style>
+  <meta name="description" content="Guía de uso del Sistema de Monitoreo USS: carga de Excel, importación de CSV de Zoom, autocompletado, exportación y reglas de negocio." />
+</head>
+<body>
+  <div class="container">
+    <h1>Guía de Usuario — Sistema de Monitoreo USS</h1>
+
+    <p class="muted">Versión del sistema: interfaz React con funciones de carga de Excel, importación de CSV de Zoom, autocompletado y exportación. Este documento explica el flujo de trabajo y las reglas de negocio aplicadas automáticamente.</p>
+
+    <div class="callout">
+      <p><strong>Objetivo:</strong> consolidar y monitorear sesiones de clase combinando el Excel institucional con reportes CSV de Zoom, aplicando autocompletados y métricas sin intervención manual.</p>
+    </div>
+
+    <h2>Requisitos</h2>
+    <ul>
+      <li>Archivo Excel institucional con cabeceras esperadas (ver “Columnas esperadas”).</li>
+      <li>Reporte CSV de Zoom con columnas como <code>Anfitrión</code>/<code>Host</code>, <code>Tema</code>/<code>Topic</code>, <code>Hora de inicio</code>/<code>Start Time</code>, <code>Hora de finalización</code>/<code>End Time</code>, <code>Duración (hh:mm:ss)</code>, <code>Video</code>.</li>
+      <li>Navegador moderno (Edge/Chrome/Firefox). Para PDF: “Imprimir → Guardar como PDF”.</li>
+    </ul>
+
+    <h2>Panel principal</h2>
+    <ul>
+      <li>Botón <code>Subir reporte CSV de Zoom</code>: selecciona el archivo CSV exportado desde Zoom.</li>
+      <li>Botón <code>Autocompletar</code>: aplica reglas de negocio y completa campos en el Excel cargado.</li>
+      <li>Botón <code>Exportar</code>: descarga un Excel con los datos visibles/actualizados.</li>
+      <li>Botón <code>Guardar copia</code> y <code>Ver archivos guardados</code>: gestión básica de respaldos locales.</li>
+      <li>Botón <code>Elegir docente aleatorio</code>: filtra temporalmente por un docente para revisión rápida.</li>
+      <li>Selector de hoja: si el Excel tiene múltiples hojas, permite cambiar la activa.</li>
+    </ul>
+
+    <h2>Flujo de trabajo</h2>
+    <ol>
+      <li>Abra la aplicación y cargue el Excel institucional.</li>
+      <li>Presione <code>Subir reporte CSV de Zoom</code> y seleccione el archivo CSV correspondiente al periodo.</li>
+      <li>Presione <code>Autocompletar</code>. El sistema:
+        <ul>
+          <li>Busca coincidencias por <strong>DOCENTE</strong>, <strong>CURSO</strong> (normalizado), <strong>SECCION</strong> (PEAD-...), <strong>SESIÓN</strong> y <strong>fecha</strong>.</li>
+          <li>Si hay múltiples grabaciones el mismo día: toma el <strong>inicio</strong> de la primera y el <strong>fin</strong> de la última; <strong>suma</strong> todas las duraciones.</li>
+          <li>Completa campos de tiempos, totales y métricas.</li>
+          <li>Aplica reglas de <strong>OBSERVACIÓN</strong> y <strong>RECOMENDACION</strong> según video.</li>
+        </ul>
+      </li>
+      <li>Use filtros/hojas según necesidad. Verifique los resultados.</li>
+      <li>Presione <code>Exportar</code> para descargar el Excel consolidado.</li>
+    </ol>
+
+    <h2>Columnas esperadas (Excel)</h2>
+    <ul>
+      <li>Identificación: <code>DOCENTE</code>, <code>CURSO</code>, <code>SECCION</code>, <code>SESION</code>.</li>
+      <li>Fecha/Hora: <code>Fecha</code>/<code>FECHA</code>/<code>Columna 13</code>, <code>inicio</code>/<code>INICIO</code>/<code>Hora Inicio</code>, <code>fin</code>/<code>FIN</code>/<code>Hora Fin</code>.</li>
+      <li>Duraciones: <code>FINALIZA LA CLASE (ZOOM)</code>/<code>Hora Finalización Zoom</code>, <code>DURACIÓN TOTAL CLASE</code>, <code>TIEMPO DE ESPERA ANTES DE INICIAR LA CLASE</code>, <code>TIEMPO EFECTIVO DICTADO</code>, <code>TIEMPO PROGRAMADO</code>.</li>
+      <li>Indicadores: <code>INICIO SESIÓN 10 MINUTOS ANTES</code> (variantes admitidas), <code>EFICIENCIA</code>.</li>
+      <li>Observaciones: <code>OBSERVACIÓN</code>/<code>OBSERVACION</code>, <code>RECOMENDACION</code>/<code>RECOMENDACIONES</code>.</li>
+    </ul>
+
+    <h2>Reglas de autocompletado</h2>
+    <h3>Tiempo y duración</h3>
+    <ul>
+      <li>Fecha: se toma del inicio de la primera grabación del día.</li>
+      <li>Hora inicio/fin: inicio de la primera y fin de la última grabación del día.</li>
+      <li><code>FINALIZA LA CLASE (ZOOM)</code> y <code>DURACIÓN TOTAL CLASE</code>: se usan las <strong>duraciones agregadas</strong> (suma de todas las grabaciones del día para la sesión/curso/SECCIÓN/Docente).</li>
+      <li><code>TIEMPO EFECTIVO DICTADO</code>: <em>Duración total - Tiempo de espera</em> (no negativo).</li>
+      <li><code>EFICIENCIA</code>: proporción basada en duración total y tiempo programado, con tolerancia.</li>
+      <li><code>INICIO SESIÓN 10 MINUTOS ANTES</code>: compara hora programada vs inicio real.</li>
+    </ul>
+
+    <h3>Video encendido/apagado</h3>
+    <ul>
+      <li>Si <code>Video = No</code> en el CSV de Zoom:
+        <ul>
+          <li><code>OBSERVACIÓN</code>: se completa con <em>"no activo camara"</em>.</li>
+          <li><code>RECOMENDACION</code>: se completa con <em>"activar su camara"</em>.</li>
+        </ul>
+      </li>
+      <li>Si <code>Video = Sí</code>: no se modifica <code>OBSERVACIÓN</code> ni <code>RECOMENDACION</code>.</li>
+      <li>Se admiten variantes de encabezados (con/ sin tilde, mayúsculas/minúsculas, espacios extra).</li>
+    </ul>
+
+    <h2>Manejo de múltiples grabaciones</h2>
+    <p>Cuando existen dos o más grabaciones el mismo día para una misma combinación de <strong>DOCENTE</strong> + <strong>CURSO</strong> (normalizado) + <strong>SECCION (PEAD)</strong> + <strong>SESION</strong>:</p>
+    <ul>
+      <li>Inicio = hora de inicio de la <strong>primera</strong> grabación.</li>
+      <li>Fin = hora de finalización de la <strong>última</strong> grabación.</li>
+      <li>Duración total = suma de <code>Duración (hh:mm:ss)</code> de todas las grabaciones del grupo.</li>
+    </ul>
+
+    <h2>Exportación y respaldos</h2>
+    <ul>
+      <li>Use <code>Exportar</code> para descargar el Excel consolidado de los datos visibles.</li>
+      <li>Use <code>Guardar copia</code> para almacenar versiones intermedias; <code>Ver archivos guardados</code> muestra el historial.</li>
+    </ul>
+
+    <h2>Imprimir a PDF o abrir en Word</h2>
+    <ul>
+      <li>Abra este archivo en el navegador y use <strong>Ctrl+P</strong> → <em>Guardar como PDF</em>.</li>
+      <li>Para Word: abra el archivo en Word (Insertar → Objeto → Texto desde archivo) o copie/pegue el contenido; también puede convertir el PDF a DOCX.</li>
+    </ul>
+
+    <h2>Solución de problemas</h2>
+    <ul>
+      <li>Cabeceras distintas: el sistema tolera tildes y mayúsculas, pero confirme que los nombres están entre los esperados.</li>
+      <li>Sin PEAD en <code>Tema</code>: no se autocompleta por coincidencia exacta; se intenta por horario si es razonable.</li>
+      <li>CSV incompleto: si falta <code>Video</code> no se llenan <code>OBSERVACIÓN</code>/<code>RECOMENDACION</code>.</li>
+      <li>Tiempo programado/espera vacíos: se omite el cálculo de métricas dependientes (efectivo/eficiencia).</li>
+    </ul>
+
+    <hr class="hr" />
+    <p class="small muted">Ubicaciones relevantes en código: coincidencias y agregado de duraciones en <code>src/App.jsx:1703–1734</code>, creación de filas nuevas <code>src/App.jsx:1826–1881</code>, reglas de observación/recomendación <code>src/App.jsx:1227–1235</code> y <code>src/App.jsx:1430–1435</code>.</p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+	--brand-green: #63ed12;
+	--brand-green-hover: #54cb0f;
+	--brand-purple: #5a2290;
+	--brand-purple-hover: #4b1c78;
+	--brand-cyan: #11acd3;
+	--brand-cyan-hover: #0f9bbf;
+	--brand-cyan-soft: #e8f6fb;
+	--brand-purple-soft: #f3ecfb;
+	--brand-green-soft: #f4fde9;
+}
+
+body {
+	background: #f7fbff;
+	color: #1f2937;
+}

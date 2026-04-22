@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Guía de Usuario - Sistema de Monitoreo USS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: Segoe UI, Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; color: #0f172a; margin: 0; }
+    .container { max-width: 920px; margin: 0 auto; padding: 32px; }
+    h1, h2, h3 { color: #0b3b8c; margin: 24px 0 12px; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 22px; }
+    h3 { font-size: 18px; }
+    p { margin: 10px 0; }
+    ul { margin: 8px 0 16px 20px; }
+    li { margin: 6px 0; }
+    code, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background: #f1f5f9; padding: 1px 6px; border-radius: 6px; font-size: 90%; }
+    .callout { background: #eff6ff; border: 1px solid #bfdbfe; padding: 12px 14px; border-radius: 8px; }
+    .muted { color: #475569; }
+    .hr { height: 1px; background: #e2e8f0; border: 0; margin: 20px 0; }
+    .small { font-size: 90%; }
+    @media print { .container { padding: 0; } .callout { border-color: #cbd5e1; } }
+  </style>
+  <meta name="description" content="Guía de uso del Sistema de Monitoreo USS: carga de Excel, importación de CSV de Zoom, autocompletado, exportación y reglas de negocio." />
+  <script>
+    (function(){
+      try {
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('print') === '1') {
+          setTimeout(function(){ window.print(); }, 300);
+        }
+      } catch(e) {}
+    })();
+  </script>
+</head>
+<body>
+  <div class="container">
+    <h1>Guía de Usuario — Sistema de Monitoreo USS</h1>
+    <p class="muted">Versión del sistema: interfaz React con funciones de carga de Excel, importación de CSV de Zoom, autocompletado y exportación. Este documento explica el flujo de trabajo y las reglas de negocio aplicadas automáticamente.</p>
+    <div class="callout">
+      <p><strong>Objetivo:</strong> consolidar y monitorear sesiones de clase combinando el Excel institucional con reportes CSV de Zoom, aplicando autocompletados y métricas sin intervención manual.</p>
+    </div>
+    <h2>Requisitos</h2>
+    <ul>
+      <li>Archivo Excel institucional con cabeceras esperadas (ver “Columnas esperadas”).</li>
+      <li>Reporte CSV de Zoom con columnas como <code>Anfitrión</code>/<code>Host</code>, <code>Tema</code>/<code>Topic</code>, <code>Hora de inicio</code>/<code>Start Time</code>, <code>Hora de finalización</code>/<code>End Time</code>, <code>Duración (hh:mm:ss)</code>, <code>Video</code>.</li>
+      <li>Navegador moderno (Edge/Chrome/Firefox). Para PDF: “Imprimir → Guardar como PDF”.</li>
+    </ul>
+    <h2>Panel principal</h2>
+    <ul>
+      <li>Botón <code>Subir reporte CSV de Zoom</code>: selecciona el archivo CSV exportado desde Zoom.</li>
+      <li>Botón <code>Autocompletar</code>: aplica reglas de negocio y completa campos en el Excel cargado.</li>
+      <li>Botón <code>Exportar</code>: descarga un Excel con los datos visibles/actualizados.</li>
+      <li>Botón <code>Guardar copia</code> y <code>Ver archivos guardados</code>: gestión básica de respaldos locales.</li>
+      <li>Botón <code>Elegir docente aleatorio</code>: filtra temporalmente por un docente para revisión rápida.</li>
+      <li>Selector de hoja: si el Excel tiene múltiples hojas, permite cambiar la activa.</li>
+    </ul>
+    <h2>Flujo de trabajo</h2>
+    <ol>
+      <li>Cargue el Excel institucional.</li>
+      <li>Suba el <code>CSV de Zoom</code>.</li>
+      <li>Presione <code>Autocompletar</code> para completar y calcular.</li>
+      <li>Verifique, filtre, y <code>Exportar</code> para descargar el Excel consolidado.</li>
+    </ol>
+    <h2>Columnas esperadas (Excel)</h2>
+    <ul>
+      <li><code>DOCENTE</code>, <code>CURSO</code>, <code>SECCION</code>, <code>SESION</code>.</li>
+      <li><code>Fecha</code>/<code>FECHA</code>/<code>Columna 13</code>, <code>inicio</code>/<code>INICIO</code>/<code>Hora Inicio</code>, <code>fin</code>/<code>FIN</code>/<code>Hora Fin</code>.</li>
+      <li><code>FINALIZA LA CLASE (ZOOM)</code>, <code>DURACIÓN TOTAL CLASE</code>, <code>TIEMPO DE ESPERA ANTES DE INICIAR LA CLASE</code>, <code>TIEMPO EFECTIVO DICTADO</code>, <code>TIEMPO PROGRAMADO</code>.</li>
+      <li><code>EFICIENCIA</code>, <code>INICIO SESIÓN 10 MINUTOS ANTES</code>.</li>
+      <li><code>OBSERVACIÓN</code>/<code>OBSERVACION</code>, <code>RECOMENDACION</code>/<code>RECOMENDACIONES</code>.</li>
+    </ul>
+    <h2>Reglas clave</h2>
+    <ul>
+      <li>Video = No → <code>OBSERVACIÓN</code>: "no activo camara", <code>RECOMENDACION</code>: "activar su camara".</li>
+      <li>Video = Sí → no se modifican esos campos.</li>
+      <li>Múltiples grabaciones en un día → inicio primero, fin último, se suman duraciones.</li>
+    </ul>
+    <h2>Impresión/Word</h2>
+    <ul>
+      <li>Para PDF: <strong>Ctrl+P</strong> → Guardar como PDF.</li>
+      <li>Para Word: abrir el HTML en Word o convertir el PDF a DOCX.</li>
+    </ul>
+    <hr class="hr" />
+    <p class="small muted">Referencias en código: <code>src/App.jsx:1703–1734</code>, <code>src/App.jsx:1826–1881</code>, <code>src/App.jsx:1227–1235</code>, <code>src/App.jsx:1430–1435</code>.</p>
+  </div>
+</body>
+</html>
