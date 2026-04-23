@@ -242,10 +242,6 @@ function Login({ onAuthenticated }) {
             </form>
           </div>
         )}
-
-        <p className="text-xs text-slate-500 text-center mt-4">
-          Las credenciales se validan desde Firestore y no están hardcodeadas en el código.
-        </p>
       </div>
     </div>
   );
